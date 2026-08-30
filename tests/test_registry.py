@@ -1,0 +1,18 @@
+from cesar_core.applications.identity import ApplicationId, ApplicationState
+from cesar_core.applications.registry import REGISTRY, get_application, is_active
+
+
+def test_gg_oferta_is_active() -> None:
+    entry = get_application(ApplicationId.GG_OFERTA)
+    assert entry.state is ApplicationState.ACTIVE
+    assert is_active(ApplicationId.GG_OFERTA) is True
+
+
+def test_claudiao_is_reserved() -> None:
+    entry = get_application(ApplicationId.CLAUDIAO)
+    assert entry.state is ApplicationState.RESERVED
+    assert is_active(ApplicationId.CLAUDIAO) is False
+
+
+def test_registry_has_exactly_the_known_applications() -> None:
+    assert set(REGISTRY.keys()) == {ApplicationId.GG_OFERTA, ApplicationId.CLAUDIAO}

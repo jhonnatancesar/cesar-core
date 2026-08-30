@@ -1,0 +1,127 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "César Core",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Read Health",
+        "operationId": "read_health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Read Readiness",
+        "operationId": "read_readiness_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "summary": "Read Capabilities",
+        "operationId": "read_capabilities_v1_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CapabilitiesResponse": {
+        "properties": {
+          "core": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "available"
+          },
+          "ai": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "not_configured"
+          },
+          "search": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "not_configured"
+          },
+          "omniroute": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "not_configured"
+          }
+        },
+        "type": "object",
+        "title": "CapabilitiesResponse",
+        "description": "Resposta de GET /v1/capabilities.\n\nOmniRoute ainda não está integrado nesta TASK: ai/search/omniroute\nsão reportados como not_configured, nunca fingidos como disponíveis."
+      },
+      "HealthStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          }
+        },
+        "type": "object",
+        "title": "HealthStatus",
+        "description": "Resposta de GET /health: só confirma que o processo está vivo."
+      },
+      "ReadinessStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          },
+          "core": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "available"
+          }
+        },
+        "type": "object",
+        "title": "ReadinessStatus",
+        "description": "Resposta de GET /ready: estado estrutural do Core."
+      },
+      "ServiceStatus": {
+        "type": "string",
+        "enum": [
+          "available",
+          "not_configured"
+        ],
+        "title": "ServiceStatus",
+        "description": "Status honesto de uma capacidade do César Core.\n\nNOT_CONFIGURED nunca deve virar AVAILABLE por conveniência: refletir\nexatamente o que está configurado é a exigência desta TASK."
+      }
+    }
+  }
+}
