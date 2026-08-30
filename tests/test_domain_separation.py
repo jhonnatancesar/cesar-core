@@ -33,10 +33,19 @@ def test_omniroute_client_does_not_import_ai_or_search_domain() -> None:
     assert not any(module.startswith(("cesar_core.ai", "cesar_core.search")) for module in modules)
 
 
-def test_omniroute_client_has_no_ai_or_search_business_methods() -> None:
-    """OmniRouteClient expõe só transporte genérico -- nunca métodos de
-    domínio como complete()/search() (isso é dos adapters em 118C/118D)."""
+def test_omniroute_client_transport_methods_take_neutral_payloads() -> None:
+    """chat_completions()/search() são transporte de baixo nível de verdade
+    (118B é dona desse transporte, ver ADR 0012) -- mas recebem um dict
+    neutro no formato nativo do OmniRoute, nunca um AIRequestPayload/
+    SearchRequestPayload de negócio (isso seria o adapter de 118C/118D
+    vazando pra dentro do transporte)."""
+    import inspect
+
     from cesar_core.omniroute.client import OmniRouteClient
 
-    assert not hasattr(OmniRouteClient, "complete")
-    assert not hasattr(OmniRouteClient, "search")
+    for method_name in ("chat_completions", "search"):
+        signature = inspect.signature(getattr(OmniRouteClient, method_name))
+        payload_annotation = str(signature.parameters["payload"].annotation)
+        assert "dict" in payload_annotation
+        assert "AIRequestPayload" not in payload_annotation
+        assert "SearchRequestPayload" not in payload_annotation

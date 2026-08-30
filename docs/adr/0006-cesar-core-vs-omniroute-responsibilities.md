@@ -9,6 +9,20 @@ estabelecia, cedo demais, uma abstração unificada indevida. A seção
 "Decisão" abaixo já reflete a versão corrigida; a "Decisão original"
 fica registrada por transparência.
 
+**Atualização (TASK-118B)**: o item "Numa TASK futura (118B+)..." abaixo
+já se concretizou -- `OmniRouteClient` (transporte de baixo nível para
+health/chat completions/search) existe de verdade, ver ADR 0011/0012/0013.
+
+## Nota de escopo (TASK-118B): quem é dona de que
+
+Confusão a evitar: **118B é dona do transporte HTTP de baixo nível para
+chat e search** (`OmniRouteClient.chat_completions()`/`search()` --
+endpoint, auth, timeout, serialização, erro). **118C/118D são donas do
+adapter de domínio** que monta o payload de negócio (qual modelo, qual
+provider, política de custo) e implementa `AIProvider`/`SearchProvider`
+usando esse transporte por baixo. Não confundir "118C é dona de chat"
+com "118B não implementa transporte de chat" -- são coisas diferentes.
+
 ## Contexto
 
 É preciso deixar claro o que vive no César Core e o que vive no OmniRoute,

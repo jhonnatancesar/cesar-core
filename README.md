@@ -14,12 +14,16 @@ de AI/Search com boundary de provider próprio para cada um (sem chamadas
 reais), modelos de política (`service_class`, `cost_policy`) e os endpoints
 `/health`, `/ready` e `/v1/capabilities` -- semântica exata em ADR 0008.
 
-**TASK-118B** (transporte OmniRoute): `omniroute/client` real -- config,
+**TASK-118B** (transporte OmniRoute): `OmniRouteClient` real -- config,
 autenticação, timeout, erros, health, serialização/desserialização,
-correlation -- validado por testes de contrato reais contra uma instância
-do OmniRoute rodando localmente numa versão pinada (ver ADR 0011). Ainda
-sem regras de negócio, sem adapters de AI/Search, sem configuração de
-Gemini/Groq/OpenRouter, sem o agente Claudião, sem deployment em produção.
+correlation. Transporte de baixo nível pronto para `/api/health`,
+`/v1/chat/completions` e `/v1/search` (`health()`, `chat_completions()`,
+`search()`) -- validado por testes de contrato reais contra
+`diegosouzapw/omniroute:3.8.50` rodando localmente por digest (ver ADR
+0011/0012/0013). Ainda sem regras de negócio, sem adapters de AI/Search
+(quem monta o payload de negócio e escolhe modelo/provider é 118C/118D),
+sem configuração de Gemini/Groq/OpenRouter, sem o agente Claudião, sem
+deployment em produção.
 
 ## Estrutura
 
@@ -29,7 +33,7 @@ src/cesar_core/
   applications/   ApplicationId, ApplicationState, ApplicationContext, registry
   ai/             contrato + provider boundary próprios de AI (sem provider concreto)
   search/         contrato + provider boundary próprios de Search (sem provider concreto)
-  omniroute/      client HTTP de baixo nível (config, auth, erros, health, timeout)
+  omniroute/      client HTTP de baixo nível (health, chat completions, search)
   policy/         service_class, cost_policy, requirements
   security/       fronteira de segurança (fundação, sem lógica funcional)
   telemetry/      correlation ID (propagado) e request ID (gerado por requisição)

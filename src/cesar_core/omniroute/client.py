@@ -1,10 +1,22 @@
 """Client HTTP de baixo nível do César Core para o OmniRoute.
 
-Escopo estrito da TASK-118B: transporte (config, autenticação, timeout,
-serialização/desserialização, correlation, normalização de erros). Não
-sabe nada de AI/Search/regras de negócio -- adapters de domínio
-(``ai/providers/omniroute.py``, ``search/providers/omniroute.py`` em
-118C/118D) usam este client, nunca o inverso (ver ADR 0006/0011).
+Escopo estrito da TASK-118B: transporte para health, chat completions e
+search (config, autenticação, timeout, serialização/desserialização,
+correlation, normalização de erros). Não sabe nada de policy de
+aplicação, service_class, cost policy, GG Oferta, Market Research ou
+qual modelo/provider o negócio escolheu -- isso é responsabilidade dos
+adapters de domínio (``ai/providers/omniroute.py``,
+``search/providers/omniroute.py`` em 118C/118D), que usam este client,
+nunca o inverso (ver ADR 0006/0011).
+
+Correlation (ver ADR 0013): ``correlation_id`` do César Core é enviado
+como ``x-request-id`` -- uma ADAPTAÇÃO ao contrato do OmniRoute 3.8.50
+(que lê esse header para seu próprio tracing/auditoria interno), não
+uma equivalência semântica. O OmniRoute 3.8.50 NÃO ecoa esse valor de
+volta: cada resposta carrega o SEU PRÓPRIO ``x-request-id``, diferente
+do que foi enviado. Esse valor upstream é capturado separadamente em
+``OmniRouteResponse.upstream_request_id`` -- nunca substitui
+``correlation_id``/``request_id`` do ``ApplicationContext``.
 """
 
 from typing import Any
@@ -23,6 +35,9 @@ from cesar_core.omniroute.errors import (
 from cesar_core.omniroute.models import OmniRouteHealth, OmniRouteResponse
 
 REQUEST_ID_HEADER = "x-request-id"
+
+CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
+SEARCH_PATH = "/v1/search"
 
 
 class OmniRouteClient:
@@ -58,6 +73,30 @@ class OmniRouteClient:
         self._raise_for_status(response)
         return OmniRouteHealth.model_validate(response.json())
 
+    async def chat_completions(
+        self, payload: dict[str, Any], *, correlation_id: str
+    ) -> OmniRouteResponse:
+        """``POST /v1/chat/completions`` de baixo nível.
+
+        ``payload`` é o corpo no formato nativo do OmniRoute (ex.:
+        ``{"model": ..., "messages": [...]}"``) -- montado pelo adapter
+        de domínio (118C), não por este client. Este método só conhece
+        endpoint/auth/timeout/serialização/erro, nunca qual modelo ou
+        provider o negócio escolheu.
+        """
+        return await self.request(
+            "POST", CHAT_COMPLETIONS_PATH, correlation_id=correlation_id, json=payload
+        )
+
+    async def search(self, payload: dict[str, Any], *, correlation_id: str) -> OmniRouteResponse:
+        """``POST /v1/search`` de baixo nível.
+
+        ``payload`` é o corpo no formato nativo do OmniRoute (ex.:
+        ``{"query": ...}"``, opcionalmente ``provider``) -- montado pelo
+        adapter de domínio (118D), não por este client.
+        """
+        return await self.request("POST", SEARCH_PATH, correlation_id=correlation_id, json=payload)
+
     async def request(
         self,
         method: str,
@@ -69,9 +108,11 @@ class OmniRouteClient:
     ) -> OmniRouteResponse:
         """Chamada autenticada de baixo nível a uma rota do OmniRoute.
 
-        Propaga ``correlation_id`` como ``x-request-id`` -- convenção que
-        o próprio OmniRoute lê para seu tracing/auditoria interno -- para
-        correlação ponta a ponta (GG Oferta -> César Core -> OmniRoute).
+        Envia ``correlation_id`` como ``x-request-id`` (adaptação ao
+        contrato do OmniRoute 3.8.50, ver ADR 0013) -- não espera nem
+        exige que o OmniRoute o devolva igual; o ``x-request-id`` da
+        resposta (se houver) vem em
+        ``OmniRouteResponse.upstream_request_id``, capturado à parte.
         """
         headers = {
             **bearer_header(self._config.read_api_key()),
@@ -86,13 +127,18 @@ class OmniRouteClient:
         except httpx.ConnectError as exc:
             raise OmniRouteConnectionError(f"OmniRoute unreachable calling {path}") from exc
         self._raise_for_status(response)
-        return OmniRouteResponse(status_code=response.status_code, body=response.json())
+        return OmniRouteResponse(
+            status_code=response.status_code,
+            body=response.json(),
+            upstream_request_id=response.headers.get(REQUEST_ID_HEADER),
+        )
 
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:
+        upstream_request_id = response.headers.get(REQUEST_ID_HEADER)
         if response.status_code in (401, 403):
-            raise OmniRouteAuthError(response.status_code, response.text)
+            raise OmniRouteAuthError(response.status_code, response.text, upstream_request_id)
         if 400 <= response.status_code < 500:
-            raise OmniRouteClientError(response.status_code, response.text)
+            raise OmniRouteClientError(response.status_code, response.text, upstream_request_id)
         if response.status_code >= 500:
-            raise OmniRouteServerError(response.status_code, response.text)
+            raise OmniRouteServerError(response.status_code, response.text, upstream_request_id)

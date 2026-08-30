@@ -45,19 +45,18 @@ superfícies que o César Core usa:
 | Autenticação (`isValidApiKey`, `extractApiKey`, `getApiKeyMetadata`, `requireManagementAuth`, login) | **Nenhuma relevante** | Único diff é null-safety para chamadas diretas em teste (sem `Request` real) -- irrelevante para um client HTTP real como o nosso. |
 | `x-request-id` (lido por `compliance/index.ts` para auditoria interna do OmniRoute) | **Nenhuma** | Arquivo sem diff -- é o header que `OmniRouteClient.request()` propaga; seguro em 3.8.50. |
 | `GET /v1/models` | **Interna, não estrutural** | 133+92 linhas mudam filtragem de "modelo gratuito" e cache do catálogo; o envelope de resposta (`data`/`object`) não muda. |
-| `POST /v1/chat/completions` -- preservação de `x-correlation-id` | **Existe só em 1f4dc830** | Feature nova (`#11739`, `resolveIncomingCorrelationId`): 3.8.50 sempre gera um `reqId` novo via `generateRequestId()`, nunca preserva um `x-correlation-id` enviado pelo caller. Não afeta a TASK-118B (que não implementa `/v1/chat/completions` -- isso é 118C), mas fica documentado para quando 118C chegar. |
+| `POST /v1/chat/completions` -- preservação de `x-correlation-id` | **Existe só em 1f4dc830** | Feature nova (`#11739`, `resolveIncomingCorrelationId`): 3.8.50 sempre gera um `reqId` novo via `generateRequestId()`, nunca preserva um `x-correlation-id` enviado pelo caller. **Correção**: a 118B *é* dona do transporte de baixo nível para `/v1/chat/completions` (`OmniRouteClient.chat_completions()`) -- só o adapter de domínio (montar o payload de negócio) é que fica para 118C. `OmniRouteClient` não usa `x-correlation-id` de qualquer forma (ver ADR 0013), então esta divergência não bloqueia o transporte, mesmo sendo dono dele já nesta TASK. |
 
 ## Consequência para correlation-id (César Core)
 
-`ApplicationContext.correlation_id` continua sendo mantido ponta a ponta
-**pelo próprio César Core** (ADR 0007), nunca dependente do OmniRoute
-ecoar ou preservar esse valor. `OmniRouteClient.request()` propaga
-`correlation_id` como `x-request-id` -- usado pelo OmniRoute só para SEU
-PRÓPRIO tracing/auditoria interno (idêntico em 3.8.50 e 1f4dc830), não
-como um mecanismo de eco. Nenhum workaround foi criado para simular a
-feature `x-correlation-id` de `/v1/chat/completions` que só existe na
-versão ainda não lançada -- quando uma release oficial suportar isso,
-esta ADR será revisitada.
+Ver ADR 0013 para o detalhamento completo: `correlation_id` do Core
+continua sendo mantido ponta a ponta pelo próprio César Core (ADR 0007),
+enviado ao OmniRoute como `x-request-id` (adaptação de transporte ao
+contrato 3.8.50, idêntico em 3.8.50 e 1f4dc830), sem depender de eco --
+confirmado ao vivo que o OmniRoute devolve seu **próprio** `x-request-id`
+na resposta, capturado à parte em `OmniRouteResponse.upstream_request_id`.
+Nenhum workaround foi criado para simular a feature `x-correlation-id`
+de `/v1/chat/completions` que só existe na versão ainda não lançada.
 
 ## Consequências
 
