@@ -2,15 +2,17 @@
 
 Nenhuma rota de AI/Search existe ainda nesta TASK, então
 ``get_application_context`` não é usada por um endpoint concreto por
-enquanto — mas o contrato precisa existir pronto para quando essas rotas
-chegarem, sem exigir refatoração (item 13 da TASK-118A).
+enquanto -- mas o contrato precisa existir pronto para quando essas
+rotas chegarem, sem exigir refatoração (item 13 da TASK-118A).
 """
 
 from fastapi import Header
 
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
+from cesar_core.policy.purpose import Purpose
 from cesar_core.telemetry.correlation import CORRELATION_HEADER, resolve_correlation_id
+from cesar_core.telemetry.request_id import new_request_id
 
 
 def get_correlation_id(
@@ -22,10 +24,20 @@ def get_correlation_id(
 
 def get_application_context(
     x_application_id: ApplicationId = Header(alias="X-Application-Id"),
-    correlation_id: str = Header(default=None, alias=CORRELATION_HEADER),
+    x_service: str = Header(alias="X-Service"),
+    x_purpose: str = Header(alias="X-Purpose"),
+    x_correlation_id: str | None = Header(default=None, alias=CORRELATION_HEADER),
 ) -> ApplicationContext:
-    """Monta o contexto da aplicação chamadora a partir dos headers da requisição."""
+    """Monta o contexto da aplicação chamadora a partir dos headers da requisição.
+
+    ``request_id`` é sempre gerado aqui (nunca lido de header): é a
+    identidade desta requisição individual, distinta do correlation ID
+    que se propaga pela cadeia inteira.
+    """
     return ApplicationContext(
         application_id=x_application_id,
-        correlation_id=resolve_correlation_id(correlation_id),
+        service=x_service,
+        purpose=Purpose(value=x_purpose),
+        request_id=new_request_id(),
+        correlation_id=resolve_correlation_id(x_correlation_id),
     )

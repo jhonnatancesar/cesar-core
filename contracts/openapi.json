@@ -83,7 +83,7 @@
         },
         "type": "object",
         "title": "CapabilitiesResponse",
-        "description": "Resposta de GET /v1/capabilities.\n\nOmniRoute ainda não está integrado nesta TASK: ai/search/omniroute\nsão reportados como not_configured, nunca fingidos como disponíveis."
+        "description": "Resposta de GET /v1/capabilities.\n\nSemântica exata (ver ADR 0008): informa quais capacidades existem e\nseu estado -- é um inventário, não um gate de prontidão. OmniRoute\nainda não está integrado nesta TASK: ai/search/omniroute são\nreportados como not_configured, nunca fingidos como disponíveis."
       },
       "HealthStatus": {
         "properties": {
@@ -95,7 +95,7 @@
         },
         "type": "object",
         "title": "HealthStatus",
-        "description": "Resposta de GET /health: só confirma que o processo está vivo."
+        "description": "Resposta de GET /health: só confirma que o processo está vivo.\n\nNão checa nenhuma dependência, capacidade ou dado -- isso é papel de\n/ready. Ver ADR 0008 para a semântica exata dos três endpoints."
       },
       "ReadinessStatus": {
         "properties": {
@@ -111,7 +111,7 @@
         },
         "type": "object",
         "title": "ReadinessStatus",
-        "description": "Resposta de GET /ready: estado estrutural do Core."
+        "description": "Resposta de GET /ready.\n\nSemântica exata (ver ADR 0008): /ready responde se o César Core está\napto a atender as capacidades ATUALMENTE configuradas/habilitadas --\nnão todas as capacidades que um dia poderão existir. Uma capacidade\nNOT_CONFIGURED nunca bloqueia readiness, porque ela ainda não foi\nhabilitada e portanto não impõe dependência obrigatória nenhuma.\nQuando uma capacidade for habilitada numa TASK futura, readiness\npassa a refletir só as dependências obrigatórias dela -- nunca \"ok\"\nfingido para uma dependência habilitada e quebrada."
       },
       "ServiceStatus": {
         "type": "string",

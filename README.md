@@ -8,10 +8,11 @@ fase de fundação).
 ## Escopo desta fase (TASK-118A)
 
 Apenas a fundação: estrutura de projeto, identidade de aplicações
-(`gg_oferta` = ACTIVE, `claudiao` = RESERVED), contratos neutros de AI/Search
-(sem provider/model), modelos de política (`service_class`, `cost_policy`),
-boundary do OmniRoute (sem chamadas reais) e os endpoints `/health`, `/ready`
-e `/v1/capabilities`.
+(`gg_oferta` = ACTIVE, `claudiao` = RESERVED), `ApplicationContext` completo
+(application/service/purpose/request_id/correlation_id), contratos neutros
+de AI/Search com boundary de provider próprio para cada um (sem chamadas
+reais), modelos de política (`service_class`, `cost_policy`) e os endpoints
+`/health`, `/ready` e `/v1/capabilities` -- semântica exata em ADR 0008.
 
 Não implementado nesta fase: chamadas reais ao OmniRoute, configuração de
 Gemini/Groq/OpenRouter, o agente Claudião, deployment em produção.
@@ -22,15 +23,20 @@ Gemini/Groq/OpenRouter, o agente Claudião, deployment em produção.
 src/cesar_core/
   api/            aplicação FastAPI e rotas HTTP
   applications/   ApplicationId, ApplicationState, ApplicationContext, registry
-  ai/             contrato neutro de AI (sem provider)
-  search/         contrato neutro de Web Search (sem provider)
-  omniroute/      boundary/contrato do OmniRoute (sem chamadas reais)
-  policy/         service_class, cost_policy, purpose, requirements
+  ai/             contrato + provider boundary próprios de AI (sem provider concreto)
+  search/         contrato + provider boundary próprios de Search (sem provider concreto)
+  omniroute/      reservado para transporte/client de baixo nível (118B+); sem Protocol ainda
+  policy/         service_class, cost_policy, service_kind, requirements
   security/       fronteira de segurança (fundação, sem lógica funcional)
-  telemetry/      correlation/request ID
+  telemetry/      correlation ID (propagado) e request ID (gerado por requisição)
   health/         lógica de health/readiness/capabilities
   config/         settings do processo
 ```
+
+`ai/` e `search/` nunca compartilham uma interface de provider: cada um
+tem a sua (`ai/provider.py`, `search/provider.py`). Um adapter real para
+o OmniRoute chega depois em `ai/providers/omniroute.py` e
+`search/providers/omniroute.py` -- ver ADR 0006.
 
 ## Desenvolvimento local
 

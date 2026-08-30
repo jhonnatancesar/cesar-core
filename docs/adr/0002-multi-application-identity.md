@@ -2,7 +2,9 @@
 
 ## Status
 
-Aceito (TASK-118A).
+Aceito (TASK-118A). `ApplicationContext` foi ampliado no mesmo TASK-118A
+(ajuste de fundação pós-aprovação estrutural) -- ver ADR 0007 para o
+contrato completo (`service`, `purpose`, `request_id`, `correlation_id`).
 
 ## Contexto
 
@@ -16,8 +18,10 @@ estado de habilitação.
 (enum: `ACTIVE`/`RESERVED`) descreve se uma aplicação está habilitada a usar
 o Core agora. Um registry estático (`applications/registry.py`) mapeia cada
 `ApplicationId` a uma entrada `Application` com seu estado. `ApplicationContext`
-carrega, por requisição, qual aplicação está chamando, já com correlation ID
-preparado.
+carrega, por requisição, a identidade completa da execução:
+`application_id`, `service` (processo/serviço chamador, ex.:
+`collection_worker`), `purpose`, `request_id` e `correlation_id` -- ver
+ADR 0007 para por que não há um `trace_id` separado.
 
 ## Consequências
 

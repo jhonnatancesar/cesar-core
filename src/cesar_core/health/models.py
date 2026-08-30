@@ -17,13 +17,27 @@ class ServiceStatus(StrEnum):
 
 
 class HealthStatus(BaseModel):
-    """Resposta de GET /health: só confirma que o processo está vivo."""
+    """Resposta de GET /health: só confirma que o processo está vivo.
+
+    Não checa nenhuma dependência, capacidade ou dado -- isso é papel de
+    /ready. Ver ADR 0008 para a semântica exata dos três endpoints.
+    """
 
     status: str = "ok"
 
 
 class ReadinessStatus(BaseModel):
-    """Resposta de GET /ready: estado estrutural do Core."""
+    """Resposta de GET /ready.
+
+    Semântica exata (ver ADR 0008): /ready responde se o César Core está
+    apto a atender as capacidades ATUALMENTE configuradas/habilitadas --
+    não todas as capacidades que um dia poderão existir. Uma capacidade
+    NOT_CONFIGURED nunca bloqueia readiness, porque ela ainda não foi
+    habilitada e portanto não impõe dependência obrigatória nenhuma.
+    Quando uma capacidade for habilitada numa TASK futura, readiness
+    passa a refletir só as dependências obrigatórias dela -- nunca "ok"
+    fingido para uma dependência habilitada e quebrada.
+    """
 
     status: str = "ok"
     core: ServiceStatus = ServiceStatus.AVAILABLE
@@ -32,8 +46,10 @@ class ReadinessStatus(BaseModel):
 class CapabilitiesResponse(BaseModel):
     """Resposta de GET /v1/capabilities.
 
-    OmniRoute ainda não está integrado nesta TASK: ai/search/omniroute
-    são reportados como not_configured, nunca fingidos como disponíveis.
+    Semântica exata (ver ADR 0008): informa quais capacidades existem e
+    seu estado -- é um inventário, não um gate de prontidão. OmniRoute
+    ainda não está integrado nesta TASK: ai/search/omniroute são
+    reportados como not_configured, nunca fingidos como disponíveis.
     """
 
     core: ServiceStatus = ServiceStatus.AVAILABLE
