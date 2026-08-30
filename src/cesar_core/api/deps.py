@@ -4,6 +4,14 @@ Nenhuma rota de AI/Search existe ainda nesta TASK, então
 ``get_application_context`` não é usada por um endpoint concreto por
 enquanto -- mas o contrato precisa existir pronto para quando essas
 rotas chegarem, sem exigir refatoração (item 13 da TASK-118A).
+
+``X-Application-Id`` NÃO é autoridade de segurança em produção -- é um
+valor arbitrário que qualquer chamador pode declarar. Ele existe aqui
+apenas como conveniência de teste/dev enquanto ``security/`` é só
+skeleton (TASK-118A não implementa autenticação). Na TASK-118E,
+``application_id`` passa a vir da identidade autenticada resolvida por
+``security/`` -- este header deixa de ser a fonte, sem exigir mudança
+no contrato de ``ApplicationContext`` (ver ADR 0010).
 """
 
 from fastapi import Header

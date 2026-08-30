@@ -26,7 +26,7 @@ src/cesar_core/
   ai/             contrato + provider boundary próprios de AI (sem provider concreto)
   search/         contrato + provider boundary próprios de Search (sem provider concreto)
   omniroute/      reservado para transporte/client de baixo nível (118B+); sem Protocol ainda
-  policy/         service_class, cost_policy, service_kind, requirements
+  policy/         service_class, cost_policy, requirements
   security/       fronteira de segurança (fundação, sem lógica funcional)
   telemetry/      correlation ID (propagado) e request ID (gerado por requisição)
   health/         lógica de health/readiness/capabilities
@@ -37,6 +37,14 @@ src/cesar_core/
 tem a sua (`ai/provider.py`, `search/provider.py`). Um adapter real para
 o OmniRoute chega depois em `ai/providers/omniroute.py` e
 `search/providers/omniroute.py` -- ver ADR 0006.
+
+Cada domínio (`ai/`, `search/`) expõe duas camadas de contrato (ADR
+0010): `AIRequestPayload`/`SearchRequestPayload` é o DTO HTTP público
+(sem identidade do chamador no corpo); `AIRequest`/`SearchRequest` é a
+requisição interna, criada pelo Core combinando esse payload com um
+`ApplicationContext` já resolvido. `ApplicationContext` e `Requirements`
+também têm fronteira própria (ADR 0009): contexto é quem/por quê/
+tracing, requirements é capacidade/qualidade/custo.
 
 ## Desenvolvimento local
 

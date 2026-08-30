@@ -1,26 +1,28 @@
-"""Requisitos de uma chamada de AI/Search ao César Core."""
+"""Requisitos de execução de uma chamada de AI/Search ao César Core."""
 
 from pydantic import BaseModel
 
 from cesar_core.policy.cost_policy import CostPolicy
 from cesar_core.policy.service_class import ServiceClass
-from cesar_core.policy.service_kind import ServiceKind
 
 
 class Requirements(BaseModel):
-    """Contrato neutro do que uma aplicação exige de uma chamada.
+    """O que uma execução exige em termos de qualidade/custo.
 
-    Não resolve provider/modelo: apenas descreve a política desejada
-    (que gateway, qual tier, qual restrição de custo). A resolução real
-    é responsabilidade de fases futuras (OmniRoute), fora do escopo da
-    TASK-118A.
+    Responsabilidade final (ver ADR 0009): ``ApplicationContext`` é
+    quem está chamando + por quê + identidade/tracing da chamada;
+    ``Requirements`` é quais capacidades/qualidade/custo a execução
+    exige. Por isso não há campo ``service`` aqui -- ele já existe em
+    ``ApplicationContext`` (o serviço/processo chamador) e um segundo
+    campo de mesmo nome, com significado diferente (qual gateway:
+    ai/search), era exatamente a duplicação que a TASK-118A pediu para
+    remover. Qual gateway (AI vs Search) já é dado pelo tipo do request
+    (``AIRequest`` vs ``SearchRequest``), não precisa ser repetido aqui.
 
-    ``purpose`` não é repetido aqui: ele já viaja em
-    ``ApplicationContext`` (ver ADR 0007) -- duplicar o mesmo campo em
-    dois contratos aninhados é exatamente a metadata espalhada que a
-    TASK-118A pediu para eliminar.
+    ``structured_output``, ``reasoning``, ``vision``, ``tool_calling``
+    (capacidades específicas) não foram adicionados nesta correção:
+    ficam para quando uma TASK futura precisar deles de fato.
     """
 
-    service: ServiceKind
     service_class: ServiceClass
     cost_policy: CostPolicy
