@@ -5,17 +5,21 @@ identidade de aplicação consumidora. Repositório independente do GG Oferta,
 dono da integração real com o OmniRoute (que **não** é implementada nesta
 fase de fundação).
 
-## Escopo desta fase (TASK-118A)
+## Escopo
 
-Apenas a fundação: estrutura de projeto, identidade de aplicações
+**TASK-118A** (fundação): estrutura de projeto, identidade de aplicações
 (`gg_oferta` = ACTIVE, `claudiao` = RESERVED), `ApplicationContext` completo
 (application/service/purpose/request_id/correlation_id), contratos neutros
 de AI/Search com boundary de provider próprio para cada um (sem chamadas
 reais), modelos de política (`service_class`, `cost_policy`) e os endpoints
 `/health`, `/ready` e `/v1/capabilities` -- semântica exata em ADR 0008.
 
-Não implementado nesta fase: chamadas reais ao OmniRoute, configuração de
-Gemini/Groq/OpenRouter, o agente Claudião, deployment em produção.
+**TASK-118B** (transporte OmniRoute): `omniroute/client` real -- config,
+autenticação, timeout, erros, health, serialização/desserialização,
+correlation -- validado por testes de contrato reais contra uma instância
+do OmniRoute rodando localmente numa versão pinada (ver ADR 0011). Ainda
+sem regras de negócio, sem adapters de AI/Search, sem configuração de
+Gemini/Groq/OpenRouter, sem o agente Claudião, sem deployment em produção.
 
 ## Estrutura
 
@@ -25,7 +29,7 @@ src/cesar_core/
   applications/   ApplicationId, ApplicationState, ApplicationContext, registry
   ai/             contrato + provider boundary próprios de AI (sem provider concreto)
   search/         contrato + provider boundary próprios de Search (sem provider concreto)
-  omniroute/      reservado para transporte/client de baixo nível (118B+); sem Protocol ainda
+  omniroute/      client HTTP de baixo nível (config, auth, erros, health, timeout)
   policy/         service_class, cost_policy, requirements
   security/       fronteira de segurança (fundação, sem lógica funcional)
   telemetry/      correlation ID (propagado) e request ID (gerado por requisição)
@@ -50,9 +54,13 @@ tracing, requirements é capacidade/qualidade/custo.
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest -m "not contract"   # suíte padrão, não depende de infra viva
 ruff check .
 ```
+
+Testes de contrato reais contra o OmniRoute (`pytest -m contract`) só
+rodam quando `.secrets/omniroute_api_key` existe; sem isso, são pulados
+automaticamente -- ver ADR 0011.
 
 Para subir a API localmente:
 

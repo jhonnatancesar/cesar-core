@@ -26,11 +26,17 @@ def test_search_provider_does_not_import_ai() -> None:
     assert not any(module.startswith("cesar_core.ai") for module in modules)
 
 
-def test_omniroute_package_defines_no_protocol_yet() -> None:
-    omniroute_dir = SRC / "omniroute"
-    python_files = list(omniroute_dir.glob("*.py"))
-    assert len(python_files) == 1  # apenas __init__.py: nenhum Protocol ainda
-    for path in python_files:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        class_defs = [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
-        assert class_defs == []
+def test_omniroute_client_does_not_import_ai_or_search_domain() -> None:
+    """omniroute/ é transporte de baixo nível (TASK-118B) -- nunca conhece
+    contratos de domínio de AI/Search (ADR 0006/0011)."""
+    modules = _imported_modules(SRC / "omniroute" / "client.py")
+    assert not any(module.startswith(("cesar_core.ai", "cesar_core.search")) for module in modules)
+
+
+def test_omniroute_client_has_no_ai_or_search_business_methods() -> None:
+    """OmniRouteClient expõe só transporte genérico -- nunca métodos de
+    domínio como complete()/search() (isso é dos adapters em 118C/118D)."""
+    from cesar_core.omniroute.client import OmniRouteClient
+
+    assert not hasattr(OmniRouteClient, "complete")
+    assert not hasattr(OmniRouteClient, "search")
