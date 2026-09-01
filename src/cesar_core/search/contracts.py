@@ -1,16 +1,16 @@
 """Contrato neutro de Web Search Gateway do César Core.
 
-Sem provider específico: nenhuma chamada real é feita nesta fase. A
-implementação concreta chega via ``search/providers/`` em TASKs futuras.
+Sem provider específico: este módulo define apenas o contrato de domínio. O
+transporte real já existe em ``omniroute/``; o adapter concreto que ligará
+esse transporte a Search deverá viver em ``search/providers/``.
 
 Duas camadas (ver ADR 0010): ``SearchRequestPayload`` é o DTO HTTP
 público -- nunca carrega identidade do chamador, só o payload funcional
 e os requirements. ``SearchRequest`` é a requisição interna de domínio:
 o César Core a constrói combinando o ``ApplicationContext`` confiável
 (resolvido por ``api/deps.py``, e futuramente por autenticação real na
-TASK-118E) com um ``SearchRequestPayload`` já validado. Nenhuma rota usa
-isso ainda nesta TASK -- é só o contrato, pronto para quando a rota
-existir.
+TASK-118E) com um ``SearchRequestPayload`` já validado. Nenhuma rota pública
+usa esse fluxo no estado atual.
 """
 
 from pydantic import BaseModel, Field

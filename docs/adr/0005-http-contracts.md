@@ -14,9 +14,10 @@ biblioteca proprietária.
 
 Todos os contratos externos do César Core são expostos via HTTP/JSON sobre
 FastAPI, com o schema OpenAPI gerado automaticamente pela aplicação e
-exportado para `contracts/openapi.json`. Os modelos Pydantic em `ai/`,
-`search/`, `policy/` e `health/` são a fonte de verdade do formato desses
-contratos.
+exportado para `contracts/openapi.json`. Os modelos Pydantic usados pelas
+rotas são a fonte de verdade do formato exposto. Modelos internos de `ai/`,
+`search/` e `policy/` só entram no OpenAPI quando uma rota pública os adota;
+no estado atual, o schema contém apenas health, readiness e capabilities.
 
 ## Consequências
 

@@ -20,9 +20,9 @@ def get_readiness() -> ReadinessStatus:
     """César Core apto a atender as capacidades atualmente habilitadas.
 
     Readiness é derivado de ``get_capabilities()``, não de um valor
-    hardcoded independente: nesta fase (TASK-118A) nenhuma capacidade
+    hardcoded independente: no estado atual nenhuma capacidade de domínio
     está habilitada, então não há dependência obrigatória a checar e o
-    core está sempre pronto. Uma TASK futura que habilitar uma
+    core está pronto. Uma mudança que habilitar uma
     capacidade DEVE substituir a lista vazia abaixo por uma checagem
     real da dependência obrigatória dela -- nunca reportar "ok" para uma
     capacidade habilitada com dependência quebrada.

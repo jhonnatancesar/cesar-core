@@ -1,8 +1,8 @@
 """Registry estático das aplicações conhecidas pelo César Core.
 
-GG Oferta é o primeiro consumidor real e ativo. Claudião é reservado:
-identidade e contrato existem para que ele possa entrar futuramente sem
-refatoração, mas nenhuma integração funcional é feita nesta fase.
+GG Oferta é o primeiro consumidor registrado como ativo. Claudião permanece
+reservado: sua identidade existe para permitir ativação sem refatorar o
+contrato, mas não há integração funcional para ele.
 """
 
 from cesar_core.applications.identity import ApplicationId, ApplicationState

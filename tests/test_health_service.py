@@ -17,7 +17,7 @@ def test_get_capabilities_is_honest_about_unconfigured_services() -> None:
 def test_readiness_is_ok_because_no_capability_is_enabled_yet() -> None:
     """/ready == apto a atender capacidades habilitadas (ADR 0008).
 
-    Nesta fase nenhuma capacidade está AVAILABLE, então não há
+    Na configuração atual nenhuma capacidade está AVAILABLE, então não há
     dependência obrigatória pendente e o core está sempre pronto -- não
     porque o valor esteja hardcoded, mas porque a lista de capacidades
     habilitadas está vazia.

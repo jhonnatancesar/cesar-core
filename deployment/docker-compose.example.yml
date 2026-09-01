@@ -1,6 +1,7 @@
-# Exemplo conceitual da topologia futura do César Core.
-# NÃO é usado por nenhum ambiente real nesta fase (TASK-118A não cria
-# deployment). Loopback-only por padrão -- nunca publicar em 0.0.0.0.
+# Exemplo conceitual da topologia pretendida do César Core.
+# O repositório ainda não contém Dockerfile nem deployment de produção;
+# este arquivo documenta rede e publicação loopback-only. Não publicar a
+# API em 0.0.0.0 sem uma decisão explícita de segurança.
 
 services:
   cesar-core:

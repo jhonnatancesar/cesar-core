@@ -27,8 +27,7 @@ Duas camadas, uma única fonte de verdade para identidade:
   criada exclusivamente pelo próprio César Core, nunca deserializada
   diretamente do corpo de uma requisição HTTP.
 
-Fluxo pretendido (ainda não implementado nesta TASK -- nenhuma rota de
-AI/Search existe em 118A):
+Fluxo definido, mas ainda sem uma rota pública de AI/Search que o execute:
 
 ```text
 HTTP (AIRequestPayload/SearchRequestPayload)
@@ -38,8 +37,9 @@ HTTP (AIRequestPayload/SearchRequestPayload)
   -> manager/provider
 ```
 
-Nesta TASK, `security/` continua skeleton -- nenhuma autenticação real é
-implementada. `get_application_context` resolve `application_id` a
+No estado atual, `security/` continua apenas como fronteira reservada e
+nenhuma autenticação real está implementada. `get_application_context`
+resolve `application_id` a
 partir do header `X-Application-Id`, o que é aceitável apenas para
 teste/dev: **não é autoridade de segurança em produção**, porque
 qualquer chamador pode declarar esse header livremente.

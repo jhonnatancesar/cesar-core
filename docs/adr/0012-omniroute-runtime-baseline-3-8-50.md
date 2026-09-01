@@ -30,9 +30,10 @@ problemas apareceram:
 - Commit associado (git tag `v3.8.50`): `5458026c216f77a3da68ea49152dc33470cfe2cb`
 - Execução: `docker pull` por digest (nunca build local, nunca `:latest`/`:next`/`:main`).
 
-`1f4dc830` passa a ser apenas **referência futura/não lançada** -- usada
-só para identificar evolução do projeto, nunca tratada como contrato
-executável desta TASK.
+`1f4dc830` é apenas **referência fora do baseline** -- usada para registrar a
+evolução observada durante o pré-flight, nunca como contrato executável do
+César Core. O fato de uma release posterior existir ou não no futuro não
+altera o pin de compatibilidade decidido aqui.
 
 ## Diferenças reais levantadas (3.8.50 vs. 1f4dc830, 71 commits de distância)
 
@@ -45,7 +46,7 @@ superfícies que o César Core usa:
 | Autenticação (`isValidApiKey`, `extractApiKey`, `getApiKeyMetadata`, `requireManagementAuth`, login) | **Nenhuma relevante** | Único diff é null-safety para chamadas diretas em teste (sem `Request` real) -- irrelevante para um client HTTP real como o nosso. |
 | `x-request-id` (lido por `compliance/index.ts` para auditoria interna do OmniRoute) | **Nenhuma** | Arquivo sem diff -- é o header que `OmniRouteClient.request()` propaga; seguro em 3.8.50. |
 | `GET /v1/models` | **Interna, não estrutural** | 133+92 linhas mudam filtragem de "modelo gratuito" e cache do catálogo; o envelope de resposta (`data`/`object`) não muda. |
-| `POST /v1/chat/completions` -- preservação de `x-correlation-id` | **Existe só em 1f4dc830** | Feature nova (`#11739`, `resolveIncomingCorrelationId`): 3.8.50 sempre gera um `reqId` novo via `generateRequestId()`, nunca preserva um `x-correlation-id` enviado pelo caller. **Correção**: a 118B *é* dona do transporte de baixo nível para `/v1/chat/completions` (`OmniRouteClient.chat_completions()`) -- só o adapter de domínio (montar o payload de negócio) é que fica para 118C. `OmniRouteClient` não usa `x-correlation-id` de qualquer forma (ver ADR 0013), então esta divergência não bloqueia o transporte, mesmo sendo dono dele já nesta TASK. |
+| `POST /v1/chat/completions` -- preservação de `x-correlation-id` | **Existe só em 1f4dc830** | Feature fora do baseline (`#11739`, `resolveIncomingCorrelationId`): 3.8.50 sempre gera um `reqId` novo via `generateRequestId()`, nunca preserva um `x-correlation-id` enviado pelo caller. A 118B é dona do transporte de baixo nível para `/v1/chat/completions` (`OmniRouteClient.chat_completions()`); somente o adapter que monta o payload de negócio fica para 118C. `OmniRouteClient` não usa `x-correlation-id` (ver ADR 0013), então essa divergência não bloqueia o transporte. |
 
 ## Consequência para correlation-id (César Core)
 
@@ -56,12 +57,12 @@ contrato 3.8.50, idêntico em 3.8.50 e 1f4dc830), sem depender de eco --
 confirmado ao vivo que o OmniRoute devolve seu **próprio** `x-request-id`
 na resposta, capturado à parte em `OmniRouteResponse.upstream_request_id`.
 Nenhum workaround foi criado para simular a feature `x-correlation-id`
-de `/v1/chat/completions` que só existe na versão ainda não lançada.
+de `/v1/chat/completions` que não pertence ao baseline 3.8.50.
 
 ## Consequências
 
 Os testes de contrato reais da TASK-118B (`tests/test_omniroute_contract.py`)
 rodam contra `diegosouzapw/omniroute:3.8.50` (por digest), não contra o
-commit `1f4dc830`. Fixtures/expectativas correspondem ao comportamento
-real observado em 3.8.50 -- nenhum teste foi ajustado para fingir uma
-capacidade que só a branch não lançada tem.
+commit `1f4dc830`. Fixtures e expectativas correspondem ao comportamento
+real observado em 3.8.50; nenhum teste pressupõe capacidades presentes
+apenas fora desse baseline.

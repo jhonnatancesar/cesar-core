@@ -1,7 +1,7 @@
 """Fronteira de segurança do César Core.
 
-Fundação apenas (TASK-118A): reserva o pacote para autenticação de
-aplicação consumidora e acesso a secrets em fases futuras. Nenhuma
-lógica funcional é implementada aqui ainda, para não overengineer algo
-que TASKs futuras podem exigir de forma diferente.
+Fronteira reservada para autenticação de aplicações consumidoras e acesso a
+secrets. Nenhuma lógica funcional está implementada no estado atual; enquanto
+isso, ``api/deps.py`` aceita identidade declarativa somente para teste e
+desenvolvimento (ver ADR 0010).
 """

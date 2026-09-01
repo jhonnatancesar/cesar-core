@@ -8,10 +8,10 @@ mas nada de policy de aplicação, service_class, cost policy, GG Oferta,
 Market Research, ou qual modelo/provider o negócio escolheu (isso nunca
 é misturado aqui, ver ADR 0006/0011). AI e Search possuem cada um seu
 próprio contrato e boundary de provider (``ai/provider.py``,
-``search/provider.py``); um adapter concreto que monta o payload de
-negócio e usa ``OmniRouteClient`` por baixo entra depois em
+``search/provider.py``); os adapters concretos que montarão o payload de
+negócio e usarão ``OmniRouteClient`` por baixo devem entrar em
 ``ai/providers/omniroute.py`` e ``search/providers/omniroute.py``
 (TASK-118C/118D), cada um implementando o Protocol do seu próprio
-domínio -- o transporte em si (``chat_completions()``/``search()``) já
-existe aqui, nesta TASK.
+domínio. O transporte em si (``chat_completions()``/``search()``) já
+está implementado aqui.
 """

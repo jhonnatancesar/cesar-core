@@ -1,16 +1,17 @@
 """Contrato neutro de AI Gateway do César Core.
 
-Sem provider/model específico: nenhuma chamada real é feita nesta fase.
-A implementação concreta (Gemini/Groq/OpenRouter/etc.) chega via
-``ai/providers/`` em TASKs futuras, nunca a este módulo.
+Sem provider/model específico: este módulo define apenas o contrato de
+domínio. O transporte real já existe em ``omniroute/``; o adapter concreto
+que ligará esse transporte a AI deverá viver em ``ai/providers/``, nunca
+neste módulo.
 
 Duas camadas (ver ADR 0010): ``AIRequestPayload`` é o DTO HTTP público
 -- nunca carrega identidade do chamador, só o payload funcional e os
 requirements. ``AIRequest`` é a requisição interna de domínio: o César
 Core a constrói combinando o ``ApplicationContext`` confiável (resolvido
 por ``api/deps.py``, e futuramente por autenticação real na TASK-118E)
-com um ``AIRequestPayload`` já validado. Nenhuma rota usa isso ainda
-nesta TASK -- é só o contrato, pronto para quando a rota existir.
+com um ``AIRequestPayload`` já validado. Nenhuma rota pública usa esse fluxo
+no estado atual.
 """
 
 from pydantic import BaseModel, Field

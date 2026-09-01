@@ -11,15 +11,13 @@ diferenças reais levantadas entre os dois).
 
 ## Contexto
 
-TASK-118A reservou `omniroute/` como boundary, sem nenhum código real
-(ADR 0006/0010). TASK-118B implementa esse transporte de verdade:
-`omniroute/client` real, com config, autenticação, timeout, erros,
-health, serialização/desserialização e correlation -- validado por
-testes de contrato reais contra uma instância do OmniRoute rodando
-localmente (repositório oficial `diegosouzapw/OmniRoute`, branch
-`release/v3.8.51`, commit `1f4dc830f3290a5507b5350417ae1547f825aefc`
-citado no pré-flight -- ver ADR 0012 para o baseline real usado,
-buildada a partir do código-fonte nesse commit exato -- nunca `:latest`).
+TASK-118A reservou `omniroute/` como boundary, sem transporte real
+(ADR 0006/0010). TASK-118B implementou `OmniRouteClient`, com config,
+autenticação, timeout, erros, health, serialização/desserialização e
+correlação. Os testes de contrato foram validados contra a imagem oficial
+`diegosouzapw/omniroute:3.8.50`, fixada por digest; o commit de pré-flight
+`1f4dc830f3290a5507b5350417ae1547f825aefc` não é o baseline executável.
+Ver ADR 0012.
 
 ## Decisão
 
@@ -36,18 +34,15 @@ buildada a partir do código-fonte nesse commit exato -- nunca `:latest`).
   guardrail explícito do plano-mestre da TASK-118 ("400/401/403 não são
   mascarados por cascata de fallback").
 - **`models.py`** -- `OmniRouteHealth` (forma real de `GET /api/health`)
-  e `OmniRouteResponse` (envelope genérico `status_code` + `body: dict`
-  para qualquer rota autenticada).
-- **`client.py`** -- `OmniRouteClient`: `health()` (sem autenticação,
-  não depende de nenhum provider pago -- só prova que o processo
-  OmniRoute está de pé) e `request(method, path, *, correlation_id,
-  json=None, params=None)` (chamada autenticada genérica, propaga
-  `correlation_id` como `x-request-id` -- header que o próprio OmniRoute
-  lê para seu tracing/auditoria interno, dando correlação ponta a ponta
-  real GG Oferta -> César Core -> OmniRoute). `request()` não sabe nada
-  de AI/Search: é `omniroute/client.py` que não importa
-  `cesar_core.ai`/`cesar_core.search`, e `OmniRouteClient` não expõe
-  `complete()`/`search()` -- verificado por teste (`test_domain_separation.py`).
+  e `OmniRouteResponse` (envelope genérico `status_code`, `body: dict` e
+  `upstream_request_id` para qualquer rota autenticada).
+- **`client.py`** -- `OmniRouteClient` expõe `health()` sem autenticação,
+  `chat_completions()` e `search()` como conveniências de transporte, além
+  de `request()` para chamadas autenticadas genéricas. Os métodos recebem
+  payloads nativos como `dict` e não escolhem modelo, provider ou política.
+  `correlation_id` é enviado como `x-request-id`; o identificador devolvido
+  pelo OmniRoute é capturado separadamente como `upstream_request_id` (ADR
+  0013). O módulo não importa `cesar_core.ai` nem `cesar_core.search`.
 
 ## Credencial mínima usada nos testes de contrato
 

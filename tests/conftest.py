@@ -1,9 +1,9 @@
 """Suporte mínimo a testes ``async def`` sem depender de pytest-asyncio.
 
-pytest-asyncio ainda não suporta pytest 9 (trava em ``pytest<9``), e o
-projeto fixa ``pytest>=9.1,<10.0`` de propósito (mesma convenção do GG
-Oferta). Este hook roda qualquer teste ``async def`` via
-``asyncio.run()`` -- o client OmniRoute é assíncrono (``httpx.AsyncClient``).
+O projeto usa um hook local pequeno em vez de adicionar um plugin assíncrono
+à suíte. Ele executa qualquer teste ``async def`` via ``asyncio.run()``; isso
+é suficiente porque o client OmniRoute usa ``httpx.AsyncClient`` e os testes
+não precisam de fixtures de event loop compartilhadas.
 """
 
 import asyncio

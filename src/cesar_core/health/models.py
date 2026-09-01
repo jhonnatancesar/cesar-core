@@ -8,8 +8,8 @@ from pydantic import BaseModel
 class ServiceStatus(StrEnum):
     """Status honesto de uma capacidade do César Core.
 
-    NOT_CONFIGURED nunca deve virar AVAILABLE por conveniência: refletir
-    exatamente o que está configurado é a exigência desta TASK.
+    NOT_CONFIGURED nunca deve virar AVAILABLE por conveniência: o valor deve
+    refletir exatamente o que está configurado no runtime.
     """
 
     AVAILABLE = "available"
@@ -34,7 +34,7 @@ class ReadinessStatus(BaseModel):
     não todas as capacidades que um dia poderão existir. Uma capacidade
     NOT_CONFIGURED nunca bloqueia readiness, porque ela ainda não foi
     habilitada e portanto não impõe dependência obrigatória nenhuma.
-    Quando uma capacidade for habilitada numa TASK futura, readiness
+    Quando uma capacidade for habilitada, readiness
     passa a refletir só as dependências obrigatórias dela -- nunca "ok"
     fingido para uma dependência habilitada e quebrada.
     """
@@ -47,9 +47,10 @@ class CapabilitiesResponse(BaseModel):
     """Resposta de GET /v1/capabilities.
 
     Semântica exata (ver ADR 0008): informa quais capacidades existem e
-    seu estado -- é um inventário, não um gate de prontidão. OmniRoute
-    ainda não está integrado nesta TASK: ai/search/omniroute são
-    reportados como not_configured, nunca fingidos como disponíveis.
+    seu estado -- é um inventário, não um gate de prontidão. O transporte
+    OmniRoute existe, mas os adapters e as rotas de domínio ainda não estão
+    habilitados; por isso ai/search/omniroute são reportados como
+    not_configured, nunca fingidos como disponíveis.
     """
 
     core: ServiceStatus = ServiceStatus.AVAILABLE

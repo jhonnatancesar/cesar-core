@@ -47,17 +47,17 @@ o header), para que uma falha também preserve esse dado de telemetria.
 
 ## Por que não usar x-correlation-id
 
-O OmniRoute 3.8.51 (ainda não lançado, ver ADR 0012) adiciona
+O código fora do baseline 3.8.50 estudado no pré-flight adicionava
 preservação de um `x-correlation-id` fornecido pelo caller em
 `/v1/chat/completions` especificamente. `OmniRouteClient` **não**
-depende disso: nesta TASK o baseline é 3.8.50, que não tem essa
-feature. Quando uma release oficial suportar isso, esta ADR deve ser
+depende disso: o baseline do projeto é 3.8.50, que não tem essa
+feature. Se o baseline oficial for atualizado para suportá-la, esta ADR deve ser
 revisitada explicitamente -- não adotar silenciosamente um
 comportamento que só existe numa branch não lançada.
 
 ## Consequências
 
-Um adapter de domínio (118C/118D) que precisar do `upstream_request_id`
+Um futuro adapter de domínio (118C/118D) que precisar do `upstream_request_id`
 para logging/observabilidade o encontra em
 `OmniRouteResponse.upstream_request_id` (sucesso) ou no atributo
 `upstream_request_id` da exceção (erro) -- nunca precisa adivinhar ou

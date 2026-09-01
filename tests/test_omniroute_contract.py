@@ -5,7 +5,7 @@ testes unitários com transporte mockado).
 Autoridade: diegosouzapw/omniroute:3.8.50, digest
 sha256:085c57adf499a8aaa9f35ccde95c0df9c11bd9ecd18d6c9edbf3b68b8079ba9d
 (ver docs/adr/0012-omniroute-runtime-baseline-3-8-50.md) -- não o
-commit 1f4dc830 (referência futura/não lançada).
+commit 1f4dc830, que está fora do baseline executável.
 
 Pulados automaticamente quando não há uma credencial local configurada,
 para que o restante da suíte (ruff/pytest/cobertura) continue verde sem

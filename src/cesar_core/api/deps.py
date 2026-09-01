@@ -1,14 +1,13 @@
 """Dependências FastAPI compartilhadas pelas rotas do César Core.
 
-Nenhuma rota de AI/Search existe ainda nesta TASK, então
-``get_application_context`` não é usada por um endpoint concreto por
-enquanto -- mas o contrato precisa existir pronto para quando essas
-rotas chegarem, sem exigir refatoração (item 13 da TASK-118A).
+Nenhuma rota pública de AI/Search existe no estado atual, então
+``get_application_context`` ainda não é usada por um endpoint concreto. A
+dependency já define o contrato que essas rotas deverão adotar.
 
 ``X-Application-Id`` NÃO é autoridade de segurança em produção -- é um
 valor arbitrário que qualquer chamador pode declarar. Ele existe aqui
-apenas como conveniência de teste/dev enquanto ``security/`` é só
-skeleton (TASK-118A não implementa autenticação). Na TASK-118E,
+apenas como conveniência de teste/dev enquanto ``security/`` é uma fronteira
+reservada, sem autenticação implementada. Na TASK-118E,
 ``application_id`` passa a vir da identidade autenticada resolvida por
 ``security/`` -- este header deixa de ser a fonte, sem exigir mudança
 no contrato de ``ApplicationContext`` (ver ADR 0010).

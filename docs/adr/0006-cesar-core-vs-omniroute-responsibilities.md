@@ -9,9 +9,10 @@ estabelecia, cedo demais, uma abstração unificada indevida. A seção
 "Decisão" abaixo já reflete a versão corrigida; a "Decisão original"
 fica registrada por transparência.
 
-**Atualização (TASK-118B)**: o item "Numa TASK futura (118B+)..." abaixo
-já se concretizou -- `OmniRouteClient` (transporte de baixo nível para
-health/chat completions/search) existe de verdade, ver ADR 0011/0012/0013.
+**Atualização (TASK-118B)**: `OmniRouteClient` foi implementado como
+transporte de baixo nível para health, chat completions e search. A decisão
+abaixo está consolidada no estado atual; detalhes estão nos ADRs 0011, 0012
+e 0013.
 
 ## Nota de escopo (TASK-118B): quem é dona de que
 
@@ -26,9 +27,8 @@ com "118B não implementa transporte de chat" -- são coisas diferentes.
 ## Contexto
 
 É preciso deixar claro o que vive no César Core e o que vive no OmniRoute,
-para que a integração futura (fora desta TASK) não borre essa fronteira
--- e, dentro do próprio César Core, que AI e Search não compartilhem uma
-abstração que deveriam ter separada.
+para que a integração não borre essa fronteira e, dentro do próprio César
+Core, para que AI e Search não compartilhem uma abstração indevida.
 
 ## Decisão
 
@@ -37,26 +37,26 @@ abstração que deveriam ter separada.
 - **`search/`** possui contrato próprio (`search/contracts.py`) e
   boundary de provider próprio (`search/provider.py`, `Protocol
   SearchProvider`).
-- **`omniroute/`** é reservado para o transporte/client/config/models/
-  erros de baixo nível do OmniRoute -- nunca uma abstração que una AI e
-  Search. Nesta TASK, `omniroute/` não contém nenhum `Protocol`: é só o
-  pacote reservado, com um docstring explicando seu papel futuro.
-- Numa TASK futura (118B+), `omniroute/` ganha um `OmniRouteClient` de
-  baixo nível que conhece os endpoints HTTP reais (`/api/v1/chat/
-  completions`, `/api/v1/search` etc.) e toda configuração de provider
-  (Gemini/Groq/OpenRouter). AI e Search consomem esse client através de
-  adapters próprios -- `ai/providers/omniroute.py` implementando
-  `AIProvider`, `search/providers/omniroute.py` implementando
-  `SearchProvider` -- nunca diretamente, e nunca através de uma
-  interface comum aos dois domínios.
+- **`omniroute/`** contém transporte, config, autenticação, modelos e erros
+  de baixo nível do OmniRoute -- nunca uma abstração que una AI e Search.
+  `OmniRouteClient` conhece `/api/health`, `/v1/chat/completions` e
+  `/v1/search`, mas não conhece regras de negócio, seleção de modelo/provider
+  nem políticas do César Core.
+- AI e Search consumirão esse client por adapters próprios:
+  `ai/providers/omniroute.py` implementando `AIProvider` e
+  `search/providers/omniroute.py` implementando `SearchProvider`. Esses
+  adapters ainda não existem no estado atual.
+- Configuração de providers upstream (Gemini/Groq/OpenRouter) pertence ao
+  runtime OmniRoute. `OmniRouteConfig` contém apenas base URL, timeout e o
+  caminho do arquivo com a chave usada pelo César Core.
 - O César Core, além disso, possui: identidade de aplicação, política
   (service class, cost policy, requirements), health/ready/capabilities
   e telemetria (correlation ID, request ID).
 
 ## Consequências
 
-Quando o OmniRoute for integrado de fato, sua implementação concreta
-entra como dois adapters separados (um por domínio), cada um satisfazendo
+O transporte OmniRoute já está integrado. A integração de domínio entra
+como dois adapters separados (um por domínio), cada um satisfazendo
 o `Protocol` do seu próprio domínio -- sem exigir mudança nos contratos
 de AI/Search ou no registry de aplicações, e sem criar uma dependência
 cruzada entre `ai/` e `search/`.

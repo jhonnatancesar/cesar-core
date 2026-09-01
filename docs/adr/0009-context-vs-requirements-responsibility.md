@@ -22,10 +22,10 @@ A fronteira final é:
   tracing da chamada: `application_id`, `service` (processo/serviço
   chamador), `purpose`, `request_id`, `correlation_id`.
 - **`Requirements`** = quais capacidades/qualidade/custo a execução
-  exige: `service_class`, `cost_policy` nesta fase (capacidades
-  específicas como `structured_output`, `reasoning`, `vision`,
-  `tool_calling` ficam para quando uma TASK futura precisar delas de
-  fato -- não foram adicionadas especulativamente aqui).
+  exige no contrato atual: `service_class` e `cost_policy`. Capacidades
+  específicas como `structured_output`, `reasoning`, `vision` e
+  `tool_calling` só devem ser adicionadas quando houver um caso de uso real,
+  sem extensão especulativa do contrato.
 
 `ServiceKind` (`ai`/`search`) foi removido: qual gateway está sendo
 chamado já é dado pelo tipo do request (`AIRequest` vs `SearchRequest`),

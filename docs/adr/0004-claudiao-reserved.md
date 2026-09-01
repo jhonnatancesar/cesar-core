@@ -6,9 +6,9 @@ Aceito (TASK-118A).
 
 ## Contexto
 
-O Claudião é um consumidor futuro já previsto, mas não deve ganhar nenhuma
-integração funcional, URL, token, ou health check nesta fase -- o risco é
-criar uma dependência operacional de algo que ainda não existe.
+O Claudião é um consumidor previsto, mas ainda não possui integração
+funcional, URL, token ou health check. Criar esses elementos antes de existir
+um consumidor real produziria uma dependência operacional especulativa.
 
 ## Decisão
 

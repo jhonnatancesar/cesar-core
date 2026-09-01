@@ -23,11 +23,13 @@ quando capacidades reais forem habilitadas.
 - **`GET /v1/capabilities`** -- inventário: quais capacidades existem e
   qual o estado de cada uma. Não é um gate de prontidão; é informação.
 
-Portanto, durante a TASK-118A, o Core está `READY` mesmo com
-`ai`/`search`/`omniroute` todos `NOT_CONFIGURED` -- não há nada
-habilitado, logo não há dependência obrigatória pendente.
+No estado atual, inclusive após a TASK-118B, o Core está `READY` com
+`ai`/`search`/`omniroute` todos `NOT_CONFIGURED`. O client de transporte
+existir não habilita sozinho uma capacidade: ainda não há adapters de domínio
+nem rotas públicas de AI/Search e, portanto, não há dependência obrigatória
+de runtime para readiness.
 
-Quando uma capacidade for habilitada numa TASK futura, `get_readiness()`
+Quando uma capacidade for habilitada, `get_readiness()`
 passa a refletir **somente** as dependências obrigatórias das
 capacidades habilitadas. Nunca reportar `ready=ok` para uma capacidade
 habilitada cuja dependência obrigatória esteja quebrada -- isso seria
