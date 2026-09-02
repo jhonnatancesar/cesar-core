@@ -5,6 +5,8 @@ import httpx
 import pytest
 
 from cesar_core.omniroute.client import (
+    AUTH_PROBE_MODEL,
+    AUTH_PROBE_TOKEN,
     CHAT_COMPLETIONS_PATH,
     REQUEST_ID_HEADER,
     SEARCH_PATH,
@@ -34,7 +36,9 @@ def _client(tmp_path: Path, handler) -> OmniRouteClient:
 async def test_health_success(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/health"
-        return httpx.Response(200, json={"status": "ok", "timestamp": "2026-08-30T00:00:00Z"})
+        return httpx.Response(
+            200, json={"status": "ok", "timestamp": "2026-08-30T00:00:00Z"}
+        )
 
     client = _client(tmp_path, handler)
     health = await client.health()
@@ -52,7 +56,9 @@ async def test_health_timeout_maps_to_omniroute_timeout_error(tmp_path: Path) ->
     await client.aclose()
 
 
-async def test_health_connection_error_maps_to_omniroute_connection_error(tmp_path: Path) -> None:
+async def test_health_connection_error_maps_to_omniroute_connection_error(
+    tmp_path: Path,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
 
@@ -128,7 +134,9 @@ async def test_request_timeout_maps_to_omniroute_timeout_error(tmp_path: Path) -
     await client.aclose()
 
 
-async def test_request_connection_error_maps_to_omniroute_connection_error(tmp_path: Path) -> None:
+async def test_request_connection_error_maps_to_omniroute_connection_error(
+    tmp_path: Path,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
 
@@ -153,7 +161,9 @@ async def test_request_captures_upstream_request_id_on_success(tmp_path: Path) -
 
 async def test_request_captures_upstream_request_id_on_error(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(401, text="invalid key", headers={REQUEST_ID_HEADER: "omniroute-err-id"})
+        return httpx.Response(
+            401, text="invalid key", headers={REQUEST_ID_HEADER: "omniroute-err-id"}
+        )
 
     client = _client(tmp_path, handler)
     with pytest.raises(OmniRouteAuthError) as exc_info:
@@ -170,9 +180,34 @@ async def test_chat_completions_posts_to_the_chat_endpoint(tmp_path: Path) -> No
         return httpx.Response(200, json={"id": "chatcmpl-1"})
 
     client = _client(tmp_path, handler)
-    response = await client.chat_completions({"model": "m", "messages": []}, correlation_id="corr-1")
+    response = await client.chat_completions(
+        {"model": "m", "messages": []}, correlation_id="corr-1"
+    )
     assert response.status_code == 200
     assert response.body == {"id": "chatcmpl-1"}
+    await client.aclose()
+
+
+async def test_chat_authentication_probe_requires_401_or_403(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == CHAT_COMPLETIONS_PATH
+        assert request.headers["Authorization"] == f"Bearer {AUTH_PROBE_TOKEN}"
+        assert json.loads(request.content)["model"] == AUTH_PROBE_MODEL
+        return httpx.Response(401, text="invalid key")
+
+    client = _client(tmp_path, handler)
+    assert await client.chat_authentication_enforced() is True
+    await client.aclose()
+
+
+async def test_chat_authentication_probe_rejects_anonymous_fallback(
+    tmp_path: Path,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, text="unknown model")
+
+    client = _client(tmp_path, handler)
+    assert await client.chat_authentication_enforced() is False
     await client.aclose()
 
 

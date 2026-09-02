@@ -24,7 +24,9 @@ def _context() -> ApplicationContext:
 
 
 def _requirements() -> Requirements:
-    return Requirements(service_class=ServiceClass.ECONOMY, cost_policy=CostPolicy.FREE_ONLY)
+    return Requirements(
+        service_class=ServiceClass.ECONOMY, cost_policy=CostPolicy.FREE_ONLY
+    )
 
 
 def test_ai_request_payload_has_no_identity_fields() -> None:
@@ -38,19 +40,31 @@ def test_search_request_payload_has_no_identity_fields() -> None:
 
 
 def test_ai_request_extends_payload_with_trusted_context() -> None:
-    payload = AIRequestPayload(requirements=_requirements(), prompt="qual o menor preço?")
+    payload = AIRequestPayload(
+        requirements=_requirements(), prompt="qual o menor preço?"
+    )
     request = AIRequest(context=_context(), **payload.model_dump())
-    response = AIResponse(correlation_id="corr-1", content="resposta")
+    response = AIResponse(
+        request_id="req-1",
+        correlation_id="corr-1",
+        content="resposta",
+        provider_gateway="omniroute",
+        model="model-a",
+        latency_ms=1.5,
+    )
 
     assert request.context.application_id is ApplicationId.GG_OFERTA
     assert request.context.service == "collection_worker"
     assert request.context.purpose.value == "market_research"
     assert request.prompt == "qual o menor preço?"
     assert response.content == "resposta"
+    assert response.usage is None
 
 
 def test_search_request_extends_payload_with_trusted_context() -> None:
-    payload = SearchRequestPayload(requirements=_requirements(), query="placa de vídeo RTX")
+    payload = SearchRequestPayload(
+        requirements=_requirements(), query="placa de vídeo RTX"
+    )
     request = SearchRequest(context=_context(), **payload.model_dump())
     response = SearchResponse(
         correlation_id="corr-2",

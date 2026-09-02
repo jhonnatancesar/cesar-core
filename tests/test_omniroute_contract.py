@@ -11,7 +11,7 @@ Pulados automaticamente quando não há uma credencial local configurada,
 para que o restante da suíte (ruff/pytest/cobertura) continue verde sem
 depender de infraestrutura viva.
 
-Três superfícies reais:
+Dez superfícies reais:
   A. health  -- GET /api/health, sem autenticação, sem provider pago.
   B. search  -- POST /v1/search, sem provider especificado; o OmniRoute
      promove "duckduckgo-free" (fallback zero-config, sem credencial)
@@ -21,17 +21,50 @@ Três superfícies reais:
      Bearer auth aceita + request enviado + erro real (400) classificado
      como OmniRouteClientError -- suficiente para a camada de transporte,
      sem precisar de um provider de chat configurado.
+  D. adapter -- o mesmo erro real atravessa `OmniRouteAIProvider` e vira
+     `AIUpstreamRequestError`, sem vazar a exceção de transporte.
+  E. endpoint -- `POST /v1/ai/generate` executa policy exata, manager e
+     adapter sobre `auto/best-free`, validando conteúdo e usage reais.
+  F. auth AI -- credencial inválida vira `AIUpstreamAuthError` no adapter.
+  G. readiness -- AI habilitada verifica health e auth real do chat.
+  H. timeout -- timeout de socket real vira `AIUpstreamUnavailableError`.
+  I. indisponibilidade -- conexão recusada real recebe a mesma normalização.
+  J. max tokens -- usage real acima do hard cap é rejeitado pelo adapter.
 """
 
+import json
+import socket
 from pathlib import Path
 
+import httpx
 import pytest
+from fastapi.testclient import TestClient
 
+from cesar_core.ai.contracts import AIRequest
+from cesar_core.ai.errors import (
+    AIUpstreamAuthError,
+    AIUpstreamRequestError,
+    AIUpstreamResponseError,
+    AIUpstreamUnavailableError,
+)
+from cesar_core.ai.manager import AIManager
+from cesar_core.ai.policy import AIModelTarget, AIPolicy
+from cesar_core.ai.providers.omniroute import OmniRouteAIProvider
+from cesar_core.api.app import app
+from cesar_core.api.deps import get_ai_manager
+from cesar_core.applications.context import ApplicationContext
+from cesar_core.applications.identity import ApplicationId
 from cesar_core.omniroute.client import OmniRouteClient
 from cesar_core.omniroute.config import OmniRouteConfig
 from cesar_core.omniroute.errors import OmniRouteAuthError, OmniRouteClientError
+from cesar_core.policy.cost_policy import CostPolicy
+from cesar_core.policy.purpose import Purpose
+from cesar_core.policy.requirements import Requirements
+from cesar_core.policy.service_class import ServiceClass
 
 DEFAULT_KEY_FILE = Path(r"C:\cesar-core\.secrets\omniroute_api_key")
+REAL_FREE_MODEL = "auto/best-free"
+REAL_MAX_TOKENS_MODEL = "oc/mimo-v2.5-free"
 
 pytestmark = pytest.mark.contract
 
@@ -48,6 +81,22 @@ def _client() -> OmniRouteClient:
     return OmniRouteClient(config)
 
 
+class CapturingTransport(httpx.AsyncBaseTransport):
+    """Captura os bytes reais e delega a chamada ao transporte de rede."""
+
+    def __init__(self) -> None:
+        self.inner = httpx.AsyncHTTPTransport()
+        self.chat_payloads: list[dict] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/chat/completions":
+            self.chat_payloads.append(json.loads(request.content))
+        return await self.inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
 async def test_a_health_against_real_omniroute_without_any_paid_provider() -> None:
     client = _client()
     health = await client.health()
@@ -56,12 +105,15 @@ async def test_a_health_against_real_omniroute_without_any_paid_provider() -> No
     await client.aclose()
 
 
-async def test_b_search_against_real_omniroute_using_the_free_fallback_provider() -> None:
+async def test_b_search_against_real_omniroute_using_the_free_fallback_provider() -> (
+    None
+):
     """POST /v1/search real, sem provider especificado -- o OmniRoute
     promove duckduckgo-free (zero credencial) automaticamente."""
     client = _client()
     response = await client.search(
-        {"query": "OmniRoute cesar core contract test"}, correlation_id="cesar-core-contract-search"
+        {"query": "OmniRoute cesar core contract test"},
+        correlation_id="cesar-core-contract-search",
     )
     assert response.status_code == 200
     assert response.body["provider"] == "duckduckgo-free"
@@ -70,7 +122,9 @@ async def test_b_search_against_real_omniroute_using_the_free_fallback_provider(
     await client.aclose()
 
 
-async def test_c_chat_completions_against_real_omniroute_unresolvable_model_is_a_client_error() -> None:
+async def test_c_chat_completions_against_real_omniroute_unresolvable_model_is_a_client_error() -> (
+    None
+):
     """POST /v1/chat/completions real, sem upstream pago configurado: prova
     endpoint + auth + request + erro real classificado -- suficiente pra
     camada de transporte (não exige provider de chat configurado)."""
@@ -89,7 +143,9 @@ async def test_c_chat_completions_against_real_omniroute_unresolvable_model_is_a
 
 async def test_authenticated_request_against_real_omniroute() -> None:
     client = _client()
-    response = await client.request("GET", "/v1/models", correlation_id="cesar-core-contract-test")
+    response = await client.request(
+        "GET", "/v1/models", correlation_id="cesar-core-contract-test"
+    )
     assert response.status_code == 200
     assert isinstance(response.body, dict)
     await client.aclose()
@@ -101,7 +157,298 @@ async def test_invalid_credential_is_a_distinct_auth_error() -> None:
     try:
         client = OmniRouteClient(OmniRouteConfig(api_key_file=bad_key_file))
         with pytest.raises(OmniRouteAuthError):
-            await client.request("GET", "/v1/models", correlation_id="cesar-core-contract-test")
+            await client.request(
+                "GET", "/v1/models", correlation_id="cesar-core-contract-test"
+            )
         await client.aclose()
     finally:
         bad_key_file.unlink(missing_ok=True)
+
+
+async def test_ai_adapter_normalizes_real_omniroute_client_error() -> None:
+    """Exercita a fronteira 118C sobre o transporte real da 118B."""
+    client = _client()
+    provider = OmniRouteAIProvider(client)
+    request = AIRequest(
+        context=ApplicationContext(
+            application_id=ApplicationId.GG_OFERTA,
+            service="contract_test",
+            purpose=Purpose(value="transport_validation"),
+            request_id="contract-ai-request",
+            correlation_id="contract-ai-correlation",
+        ),
+        requirements=Requirements(
+            service_class=ServiceClass.ECONOMY,
+            cost_policy=CostPolicy.FREE_ONLY,
+        ),
+        prompt="ping",
+    )
+    with pytest.raises(AIUpstreamRequestError) as exc_info:
+        await provider.complete(
+            request,
+            target=AIModelTarget("does-not-exist-cesar-core-ai-adapter-test"),
+        )
+    assert exc_info.value.status_code == 400
+    await client.aclose()
+
+
+async def test_ai_generate_endpoint_normalizes_real_omniroute_completion() -> None:
+    """Prova rota -> contexto -> policy -> manager -> adapter -> OmniRoute."""
+    target = AIModelTarget(
+        REAL_FREE_MODEL,
+        paid=False,
+        max_tokens_limit=32,
+    )
+    policy = AIPolicy(
+        {
+            (
+                ApplicationId.GG_OFERTA,
+                "contract_ai_validation",
+                ServiceClass.ECONOMY,
+            ): target
+        }
+    )
+
+    async def real_manager():
+        async with _client() as omniroute_client:
+            yield AIManager(OmniRouteAIProvider(omniroute_client), policy)
+
+    app.dependency_overrides[get_ai_manager] = real_manager
+    try:
+        response = TestClient(app).post(
+            "/v1/ai/generate",
+            headers={
+                "X-Application-Id": "gg_oferta",
+                "X-Service": "contract_test",
+                "X-Purpose": "contract_ai_validation",
+                "X-Correlation-Id": "contract-ai-success-correlation",
+            },
+            json={
+                "requirements": {
+                    "service_class": "economy",
+                    "cost_policy": "free_only",
+                },
+                "prompt": "Reply with exactly: CESAR_CORE_118C_OK",
+            },
+        )
+        limit_response = TestClient(app).post(
+            "/v1/ai/generate",
+            headers={
+                "X-Application-Id": "gg_oferta",
+                "X-Service": "contract_test",
+                "X-Purpose": "contract_ai_validation",
+                "X-Correlation-Id": "contract-ai-limit-correlation",
+            },
+            json={
+                "requirements": {
+                    "service_class": "economy",
+                    "cost_policy": "free_only",
+                },
+                "prompt": "this request must be rejected before the upstream",
+                "max_tokens": 33,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "CESAR_CORE_118C_OK" in body["content"]
+    assert body["provider_gateway"] == "omniroute"
+    assert body["model"]
+    assert body["request_id"]
+    assert body["correlation_id"] == "contract-ai-success-correlation"
+    assert body["upstream_request_id"]
+    assert body["usage"]["prompt_tokens"] > 0
+    assert body["usage"]["completion_tokens"] > 0
+    assert body["usage"]["total_tokens"] >= body["usage"]["completion_tokens"]
+    assert limit_response.status_code == 403
+    assert limit_response.json()["error"]["code"] == "ai_policy_denied"
+
+
+async def test_ai_adapter_rejects_real_provider_that_violates_max_tokens() -> None:
+    """O alvo local ignora o cap; o adapter deve falhar fechado, não devolver 200."""
+    client = OmniRouteClient(
+        OmniRouteConfig(
+            api_key_file=DEFAULT_KEY_FILE,
+            timeout_seconds=90,
+        )
+    )
+    provider = OmniRouteAIProvider(client)
+    request = AIRequest(
+        context=ApplicationContext(
+            application_id=ApplicationId.GG_OFERTA,
+            service="contract_test",
+            purpose=Purpose(value="max_tokens_validation"),
+            request_id="contract-ai-max-tokens-request",
+            correlation_id="contract-ai-max-tokens-correlation",
+        ),
+        requirements=Requirements(
+            service_class=ServiceClass.ECONOMY,
+            cost_policy=CostPolicy.FREE_ONLY,
+        ),
+        prompt="Reply with exactly: CESAR_CORE_MAX_TOKENS_PROBE",
+        max_tokens=8,
+    )
+    try:
+        with pytest.raises(AIUpstreamResponseError) as exc_info:
+            await provider.complete(request, target=AIModelTarget(REAL_FREE_MODEL))
+        assert "exceeded" in str(exc_info.value)
+        assert exc_info.value.upstream_request_id
+    finally:
+        await client.aclose()
+
+
+async def test_ai_adapter_real_upstream_enforces_max_tokens() -> None:
+    """Prova payload na rede e cap real em um modelo fixo que o suporta."""
+    transport = CapturingTransport()
+    client = OmniRouteClient(
+        OmniRouteConfig(api_key_file=DEFAULT_KEY_FILE, timeout_seconds=90),
+        transport=transport,
+    )
+    provider = OmniRouteAIProvider(client)
+    request = AIRequest(
+        context=ApplicationContext(
+            application_id=ApplicationId.GG_OFERTA,
+            service="contract_test",
+            purpose=Purpose(value="max_tokens_enforcement"),
+            request_id="contract-ai-max-enforced-request",
+            correlation_id="contract-ai-max-enforced-correlation",
+        ),
+        requirements=Requirements(
+            service_class=ServiceClass.ECONOMY,
+            cost_policy=CostPolicy.FREE_ONLY,
+        ),
+        prompt="Reply with exactly: CAPPED",
+        max_tokens=128,
+    )
+    try:
+        response = await provider.complete(
+            request,
+            target=AIModelTarget(
+                REAL_MAX_TOKENS_MODEL,
+                paid=False,
+                enforces_max_tokens=True,
+            ),
+        )
+    finally:
+        await client.aclose()
+
+    assert transport.chat_payloads == [
+        {
+            "model": REAL_MAX_TOKENS_MODEL,
+            "messages": [{"role": "user", "content": "Reply with exactly: CAPPED"}],
+            "max_tokens": 128,
+        }
+    ]
+    assert response.model == "mimo-v2.5-free"
+    assert response.content == "CAPPED"
+    assert response.usage is not None
+    assert response.usage.completion_tokens is not None
+    assert response.usage.completion_tokens <= 128
+
+
+async def test_ai_adapter_normalizes_real_authentication_error() -> None:
+    bad_key_file = (
+        DEFAULT_KEY_FILE.parent / "omniroute_api_key_invalid_for_ai_adapter_test"
+    )
+    bad_key_file.write_text("sk-definitely-not-a-real-ai-key", encoding="utf-8")
+    try:
+        client = OmniRouteClient(OmniRouteConfig(api_key_file=bad_key_file))
+        provider = OmniRouteAIProvider(client)
+        request = AIRequest(
+            context=ApplicationContext(
+                application_id=ApplicationId.GG_OFERTA,
+                service="contract_test",
+                purpose=Purpose(value="auth_validation"),
+                request_id="contract-ai-auth-request",
+                correlation_id="contract-ai-auth-correlation",
+            ),
+            requirements=Requirements(
+                service_class=ServiceClass.ECONOMY,
+                cost_policy=CostPolicy.FREE_ONLY,
+            ),
+            prompt="ping",
+        )
+        with pytest.raises(AIUpstreamAuthError) as exc_info:
+            await provider.complete(request, target=AIModelTarget(REAL_FREE_MODEL))
+        assert exc_info.value.status_code == 401
+        await client.aclose()
+    finally:
+        bad_key_file.unlink(missing_ok=True)
+
+
+def test_readiness_and_capabilities_with_real_enabled_ai(monkeypatch) -> None:
+    monkeypatch.setenv("CESAR_CORE_AI_ENABLED", "true")
+    monkeypatch.setenv("CESAR_CORE_AI_DEFAULT_MODEL", REAL_FREE_MODEL)
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(DEFAULT_KEY_FILE))
+
+    client = TestClient(app)
+    readiness = client.get("/ready")
+    capabilities = client.get("/v1/capabilities")
+    assert readiness.status_code == 200
+    assert readiness.json() == {"status": "ok", "core": "available"}
+    assert capabilities.status_code == 200
+    assert capabilities.json()["ai"] == "available"
+    assert capabilities.json()["omniroute"] == "available"
+    assert capabilities.json()["search"] == "not_configured"
+
+
+async def test_ai_adapter_normalizes_real_timeout() -> None:
+    client = OmniRouteClient(
+        OmniRouteConfig(api_key_file=DEFAULT_KEY_FILE, timeout_seconds=0.001)
+    )
+    provider = OmniRouteAIProvider(client)
+    request = AIRequest(
+        context=ApplicationContext(
+            application_id=ApplicationId.GG_OFERTA,
+            service="contract_test",
+            purpose=Purpose(value="timeout_validation"),
+            request_id="contract-ai-timeout-request",
+            correlation_id="contract-ai-timeout-correlation",
+        ),
+        requirements=Requirements(
+            service_class=ServiceClass.ECONOMY,
+            cost_policy=CostPolicy.FREE_ONLY,
+        ),
+        prompt="Reply with exactly: TIMEOUT_SHOULD_WIN",
+    )
+    try:
+        with pytest.raises(AIUpstreamUnavailableError):
+            await provider.complete(request, target=AIModelTarget(REAL_FREE_MODEL))
+    finally:
+        await client.aclose()
+
+
+async def test_ai_adapter_normalizes_real_connection_refusal() -> None:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        unused_port = probe.getsockname()[1]
+
+    client = OmniRouteClient(
+        OmniRouteConfig(
+            base_url=f"http://127.0.0.1:{unused_port}",
+            api_key_file=DEFAULT_KEY_FILE,
+            timeout_seconds=0.2,
+        )
+    )
+    provider = OmniRouteAIProvider(client)
+    request = AIRequest(
+        context=ApplicationContext(
+            application_id=ApplicationId.GG_OFERTA,
+            service="contract_test",
+            purpose=Purpose(value="unavailable_validation"),
+            request_id="contract-ai-unavailable-request",
+            correlation_id="contract-ai-unavailable-correlation",
+        ),
+        requirements=Requirements(
+            service_class=ServiceClass.ECONOMY,
+            cost_policy=CostPolicy.FREE_ONLY,
+        ),
+        prompt="ping",
+    )
+    try:
+        with pytest.raises(AIUpstreamUnavailableError):
+            await provider.complete(request, target=AIModelTarget(REAL_FREE_MODEL))
+    finally:
+        await client.aclose()

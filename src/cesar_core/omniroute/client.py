@@ -38,6 +38,8 @@ REQUEST_ID_HEADER = "x-request-id"
 
 CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
 SEARCH_PATH = "/v1/search"
+AUTH_PROBE_MODEL = "does-not-exist-cesar-core-auth-enforcement-probe"
+AUTH_PROBE_TOKEN = "sk-cesar-core-intentionally-invalid-auth-probe"
 
 
 class OmniRouteClient:
@@ -88,14 +90,54 @@ class OmniRouteClient:
             "POST", CHAT_COMPLETIONS_PATH, correlation_id=correlation_id, json=payload
         )
 
-    async def search(self, payload: dict[str, Any], *, correlation_id: str) -> OmniRouteResponse:
+    async def chat_authentication_enforced(self) -> bool:
+        """Prova que o endpoint de chat rejeita uma credencial inválida.
+
+        O health é público e ``/v1/models`` pode exigir autenticação mesmo
+        quando chat ainda permite fallback anônimo. Por isso readiness usa
+        uma requisição deliberadamente inválida a um modelo inexistente: um
+        runtime seguro responde 401/403 antes de qualquer resolução de
+        provider; qualquer outra resposta significa que a fronteira de chat
+        não está protegida.
+        """
+        headers = {
+            "Authorization": f"Bearer {AUTH_PROBE_TOKEN}",
+            REQUEST_ID_HEADER: "cesar-core-readiness-auth-probe",
+        }
+        payload = {
+            "model": AUTH_PROBE_MODEL,
+            "messages": [{"role": "user", "content": "auth probe"}],
+        }
+        try:
+            response = await self._http.post(
+                CHAT_COMPLETIONS_PATH,
+                json=payload,
+                headers=headers,
+            )
+        except httpx.TimeoutException as exc:
+            raise OmniRouteTimeoutError("OmniRoute auth probe timed out") from exc
+        except httpx.ConnectError as exc:
+            raise OmniRouteConnectionError(
+                "OmniRoute unreachable during auth probe"
+            ) from exc
+        if response.status_code in (401, 403):
+            return True
+        if response.status_code >= 500:
+            self._raise_for_status(response)
+        return False
+
+    async def search(
+        self, payload: dict[str, Any], *, correlation_id: str
+    ) -> OmniRouteResponse:
         """``POST /v1/search`` de baixo nível.
 
         ``payload`` é o corpo no formato nativo do OmniRoute (ex.:
         ``{"query": ...}"``, opcionalmente ``provider``) -- montado pelo
         adapter de domínio (118D), não por este client.
         """
-        return await self.request("POST", SEARCH_PATH, correlation_id=correlation_id, json=payload)
+        return await self.request(
+            "POST", SEARCH_PATH, correlation_id=correlation_id, json=payload
+        )
 
     async def request(
         self,
@@ -123,9 +165,13 @@ class OmniRouteClient:
                 method, path, json=json, params=params, headers=headers
             )
         except httpx.TimeoutException as exc:
-            raise OmniRouteTimeoutError(f"OmniRoute request to {path} timed out") from exc
+            raise OmniRouteTimeoutError(
+                f"OmniRoute request to {path} timed out"
+            ) from exc
         except httpx.ConnectError as exc:
-            raise OmniRouteConnectionError(f"OmniRoute unreachable calling {path}") from exc
+            raise OmniRouteConnectionError(
+                f"OmniRoute unreachable calling {path}"
+            ) from exc
         self._raise_for_status(response)
         return OmniRouteResponse(
             status_code=response.status_code,
@@ -137,8 +183,14 @@ class OmniRouteClient:
     def _raise_for_status(response: httpx.Response) -> None:
         upstream_request_id = response.headers.get(REQUEST_ID_HEADER)
         if response.status_code in (401, 403):
-            raise OmniRouteAuthError(response.status_code, response.text, upstream_request_id)
+            raise OmniRouteAuthError(
+                response.status_code, response.text, upstream_request_id
+            )
         if 400 <= response.status_code < 500:
-            raise OmniRouteClientError(response.status_code, response.text, upstream_request_id)
+            raise OmniRouteClientError(
+                response.status_code, response.text, upstream_request_id
+            )
         if response.status_code >= 500:
-            raise OmniRouteServerError(response.status_code, response.text, upstream_request_id)
+            raise OmniRouteServerError(
+                response.status_code, response.text, upstream_request_id
+            )

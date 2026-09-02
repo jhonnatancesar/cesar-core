@@ -1,8 +1,8 @@
 """Dependências FastAPI compartilhadas pelas rotas do César Core.
 
-Nenhuma rota pública de AI/Search existe no estado atual, então
-``get_application_context`` ainda não é usada por um endpoint concreto. A
-dependency já define o contrato que essas rotas deverão adotar.
+``POST /v1/ai/generate`` usa uma variante request-aware de
+``get_application_context``. Search deverá adotar a mesma fronteira: contexto
+confiável nos headers/dependencies e payload funcional no body.
 
 ``X-Application-Id`` NÃO é autoridade de segurança em produção -- é um
 valor arbitrário que qualquer chamador pode declarar. Ele existe aqui
@@ -13,11 +13,22 @@ reservada, sem autenticação implementada. Na TASK-118E,
 no contrato de ``ApplicationContext`` (ver ADR 0010).
 """
 
-from fastapi import Header
+from collections.abc import AsyncIterator
 
+from fastapi import Header, Request
+
+from cesar_core.ai.config import AIConfig
+from cesar_core.ai.contracts import AIRequest, AIResponse
+from cesar_core.ai.errors import AIUpstreamUnavailableError
+from cesar_core.ai.manager import AIManager
+from cesar_core.ai.policy import WILDCARD_PURPOSE, AIModelTarget, AIPolicy, PolicyKey
+from cesar_core.ai.providers.omniroute import OmniRouteAIProvider
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
+from cesar_core.omniroute.client import OmniRouteClient
+from cesar_core.omniroute.config import OmniRouteConfig
 from cesar_core.policy.purpose import Purpose
+from cesar_core.policy.service_class import ServiceClass
 from cesar_core.telemetry.correlation import CORRELATION_HEADER, resolve_correlation_id
 from cesar_core.telemetry.request_id import new_request_id
 
@@ -48,3 +59,71 @@ def get_application_context(
         request_id=new_request_id(),
         correlation_id=resolve_correlation_id(x_correlation_id),
     )
+
+
+def get_request_application_context(
+    request: Request,
+    x_application_id: ApplicationId = Header(alias="X-Application-Id"),
+    x_service: str = Header(alias="X-Service"),
+    x_purpose: str = Header(alias="X-Purpose"),
+) -> ApplicationContext:
+    """Monta o contexto usando o correlation ID já resolvido pelo middleware."""
+    return get_application_context(
+        x_application_id,
+        x_service,
+        x_purpose,
+        request.state.correlation_id,
+    )
+
+
+async def get_ai_manager() -> AsyncIterator[AIManager]:
+    """Constrói o runtime AI configurado por variáveis de ambiente."""
+    config = AIConfig()
+    if not config.is_configured:
+        yield AIManager(_UnavailableAIProvider(), AIPolicy({}))
+        return
+
+    rules: dict[PolicyKey, AIModelTarget] = {}
+    for service_class in ServiceClass:
+        model = config.model_for(service_class)
+        if model is not None:
+            rules[(ApplicationId.GG_OFERTA, WILDCARD_PURPOSE, service_class)] = (
+                AIModelTarget(
+                    model=model,
+                    provider=config.provider or None,
+                    paid=config.model_is_paid,
+                    enforces_max_tokens=config.model_enforces_max_tokens,
+                    max_tokens_limit=config.max_tokens_limit,
+                )
+            )
+
+    try:
+        omniroute_config = OmniRouteConfig()
+    except ValueError:
+        yield AIManager(
+            _UnavailableAIProvider(
+                AIUpstreamUnavailableError("OmniRoute is not configured")
+            ),
+            AIPolicy(rules),
+        )
+        return
+
+    client = OmniRouteClient(omniroute_config)
+    try:
+        yield AIManager(OmniRouteAIProvider(client), AIPolicy(rules))
+    finally:
+        await client.aclose()
+
+
+class _UnavailableAIProvider:
+    """Provider sentinela para produzir erros públicos normalizados."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error or AIUpstreamUnavailableError(
+            "Central AI Gateway is not configured"
+        )
+
+    async def complete(
+        self, request: AIRequest, *, target: AIModelTarget
+    ) -> AIResponse:
+        raise self._error

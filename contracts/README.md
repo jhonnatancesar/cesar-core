@@ -16,10 +16,10 @@ O OpenAPI atual publica somente:
 
 - `GET /health`;
 - `GET /ready`;
-- `GET /v1/capabilities`.
+- `GET /v1/capabilities`;
+- `POST /v1/ai/generate`.
 
-Os modelos em `ai/contracts.py` e `search/contracts.py` são contratos de
-domínio preparados para as próximas rotas, mas ainda não fazem parte do
-OpenAPI porque nenhum endpoint público de AI/Search foi registrado. O
-`OmniRouteClient` também é uma dependência interna de transporte e não expõe
-diretamente suas rotas upstream no OpenAPI do César Core.
+Os DTOs públicos de AI agora fazem parte do OpenAPI. Os modelos de Search
+continuam internos até a TASK-118D. O `OmniRouteClient` é uma dependência de
+transporte e não expõe diretamente suas rotas upstream no OpenAPI do César
+Core.

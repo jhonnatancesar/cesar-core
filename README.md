@@ -7,7 +7,8 @@ Oferta e contém o transporte HTTP real de baixo nível para o OmniRoute.
 ## Estado atual
 
 O projeto concluiu a fundação (**TASK-118A**) e o transporte OmniRoute
-(**TASK-118B**). Estão implementados:
+(**TASK-118B**). A primeira fatia do Central AI Gateway (**TASK-118C**) está
+implementada. Estão disponíveis:
 
 - registry de aplicações e `ApplicationContext`;
 - contratos internos e boundaries separados de AI e Search;
@@ -15,13 +16,14 @@ O projeto concluiu a fundação (**TASK-118A**) e o transporte OmniRoute
 - endpoints `/health`, `/ready` e `/v1/capabilities`;
 - `OmniRouteClient` para `/api/health`, `/v1/chat/completions` e `/v1/search`;
 - autenticação Bearer, timeout, correlação e erros normalizados do transporte.
+- policy AI por application/purpose/service class e restrição de custo;
+- `AIManager`, adapter OmniRoute e `POST /v1/ai/generate`;
+- resposta AI normalizada com usage, modelo, provider e IDs de telemetria.
 
-Ainda não estão implementados os adapters de domínio que traduzem contratos
-de AI/Search para payloads do OmniRoute, as rotas públicas de AI/Search, a
-autenticação das aplicações consumidoras nem o deployment de produção. Por
-isso, `/v1/capabilities` ainda informa `ai`, `search` e `omniroute` como
-`not_configured`: o transporte existir não significa que uma capacidade de
-negócio já esteja habilitada.
+Ainda não estão implementados o adapter/rota de Search, a autenticação das
+aplicações consumidoras nem o deployment de produção. AI e OmniRoute aparecem
+como `not_configured` enquanto `CESAR_CORE_AI_ENABLED` estiver falso ou não
+houver modelo padrão; Search continua `not_configured` até a TASK-118D.
 
 ## Escopo
 
@@ -49,7 +51,7 @@ deployment em produção.
 src/cesar_core/
   api/            aplicação FastAPI e rotas HTTP
   applications/   ApplicationId, ApplicationState, ApplicationContext, registry
-  ai/             contrato + provider boundary próprios de AI
+  ai/             contrato, policy, manager e adapter OmniRoute de AI
   search/         contrato + provider boundary próprios de Search
   omniroute/      client HTTP de baixo nível (health, chat completions, search)
   policy/         service_class, cost_policy, requirements
@@ -59,11 +61,10 @@ src/cesar_core/
   config/         settings do processo
 ```
 
-`ai/` e `search/` nunca compartilham uma interface de provider: cada um
-tem a sua (`ai/provider.py`, `search/provider.py`). Os adapters de domínio
-para o OmniRoute ainda devem entrar em `ai/providers/omniroute.py` e
-`search/providers/omniroute.py`; o transporte que eles usarão já existe em
-`omniroute/client.py` -- ver ADR 0006.
+`ai/` e `search/` nunca compartilham uma interface de provider: cada um tem a
+sua (`ai/provider.py`, `search/provider.py`). O adapter AI já existe em
+`ai/providers/omniroute.py`; o adapter de Search entra na TASK-118D. Ambos
+usam o transporte de `omniroute/client.py` -- ver ADR 0006 e ADR 0014.
 
 Cada domínio (`ai/`, `search/`) expõe duas camadas de contrato (ADR
 0010): `AIRequestPayload`/`SearchRequestPayload` é o DTO HTTP público
@@ -88,6 +89,18 @@ automaticamente -- ver ADR 0011.
 A configuração de exemplo está em `.env.example`. A chave do OmniRoute não
 deve ser colocada no `.env`: `CESAR_CORE_OMNIROUTE_API_KEY_FILE` aponta para
 um arquivo local fora do Git.
+
+Para habilitar o endpoint AI, configure ao menos:
+
+```env
+CESAR_CORE_AI_ENABLED=true
+CESAR_CORE_AI_DEFAULT_MODEL=<modelo disponível no OmniRoute>
+CESAR_CORE_OMNIROUTE_API_KEY_FILE=.secrets/omniroute_api_key
+```
+
+O modelo não é aceito no body público: ele é escolhido pela policy interna.
+`ECONOMY_MODEL`, `STANDARD_MODEL` e `QUALITY_MODEL` permitem overrides por
+classe de serviço. `FREE_ONLY` rejeita um alvo marcado como pago.
 
 Para subir a API localmente:
 

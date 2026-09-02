@@ -23,11 +23,11 @@ quando capacidades reais forem habilitadas.
 - **`GET /v1/capabilities`** -- inventário: quais capacidades existem e
   qual o estado de cada uma. Não é um gate de prontidão; é informação.
 
-No estado atual, inclusive após a TASK-118B, o Core está `READY` com
-`ai`/`search`/`omniroute` todos `NOT_CONFIGURED`. O client de transporte
-existir não habilita sozinho uma capacidade: ainda não há adapters de domínio
-nem rotas públicas de AI/Search e, portanto, não há dependência obrigatória
-de runtime para readiness.
+Por padrão, o Core está `READY` com `ai`/`search`/`omniroute` em
+`NOT_CONFIGURED`. A TASK-118C habilita `ai` e `omniroute` somente quando a
+configuração AI está ativa e possui modelo. Nesse caso, `/ready` verifica o
+health real do OmniRoute e confirma que o endpoint de chat rejeita credencial
+inválida; Search permanece independente e `NOT_CONFIGURED`.
 
 Quando uma capacidade for habilitada, `get_readiness()`
 passa a refletir **somente** as dependências obrigatórias das

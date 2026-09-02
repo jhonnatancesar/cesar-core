@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI, Request
 
-from cesar_core.api.routes import capabilities, health
+from cesar_core.api.routes import ai, capabilities, health
 from cesar_core.telemetry.correlation import CORRELATION_HEADER, resolve_correlation_id
 
 
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(capabilities.router)
+    app.include_router(ai.router)
 
     return app
 

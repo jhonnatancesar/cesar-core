@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from cesar_core.health.models import HealthStatus, ReadinessStatus
-from cesar_core.health.service import get_health, get_readiness
+from cesar_core.health.service import get_health, probe_readiness
 
 router = APIRouter()
 
@@ -14,5 +14,5 @@ def read_health() -> HealthStatus:
 
 
 @router.get("/ready", response_model=ReadinessStatus)
-def read_readiness() -> ReadinessStatus:
-    return get_readiness()
+async def read_readiness() -> ReadinessStatus:
+    return await probe_readiness()
