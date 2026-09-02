@@ -157,6 +157,105 @@
           }
         }
       }
+    },
+    "/v1/search": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Web",
+        "operationId": "search_web_v1_search_post",
+        "parameters": [
+          {
+            "name": "X-Application-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ApplicationId"
+            }
+          },
+          {
+            "name": "X-Service",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "X-Service"
+            }
+          },
+          {
+            "name": "X-Purpose",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "X-Purpose"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequestPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -395,6 +494,17 @@
           },
           "search": {
             "$ref": "#/components/schemas/ServiceStatus",
+            "description": "Aggregated Search availability for at least one purpose.",
+            "default": "not_configured"
+          },
+          "search_general_web": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "description": "General Web Search target availability.",
+            "default": "not_configured"
+          },
+          "search_technical_documentation": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "description": "Technical-documentation Search target availability.",
             "default": "not_configured"
           },
           "omniroute": {
@@ -404,7 +514,7 @@
         },
         "type": "object",
         "title": "CapabilitiesResponse",
-        "description": "Resposta de GET /v1/capabilities.\n\nSemântica exata (ver ADR 0008): informa quais capacidades existem e\nseu estado -- é um inventário, não um gate de prontidão. O transporte\nOmniRoute e AI são ``available`` somente quando o Central AI Gateway está\nhabilitado e possui um modelo configurado. Search permanece independente."
+        "description": "Resposta de GET /v1/capabilities.\n\nSemântica exata (ver ADR 0008): informa quais capacidades existem e\nseu estado -- é um inventário, não um gate de prontidão. O transporte\nOmniRoute fica ``available`` quando ao menos um gateway de domínio está\nconfigurado. AI e Search são reportados independentemente; Search também\nexplicita a cobertura semântica geral e de documentação técnica."
       },
       "CostPolicy": {
         "type": "string",
@@ -473,6 +583,296 @@
         ],
         "title": "Requirements",
         "description": "O que uma execução exige em termos de qualidade/custo.\n\nResponsabilidade final (ver ADR 0009): ``ApplicationContext`` é\nquem está chamando + por quê + identidade/tracing da chamada;\n``Requirements`` é quais capacidades/qualidade/custo a execução\nexige. Por isso não há campo ``service`` aqui -- ele já existe em\n``ApplicationContext`` (o serviço/processo chamador) e um segundo\ncampo de mesmo nome, com significado diferente (qual gateway:\nai/search), era exatamente a duplicação que a TASK-118A pediu para\nremover. Qual gateway (AI vs Search) já é dado pelo tipo do request\n(``AIRequest`` vs ``SearchRequest``), não precisa ser repetido aqui.\n\n``structured_output``, ``reasoning``, ``vision``, ``tool_calling``\n(capacidades específicas) não foram adicionados nesta correção:\nficam para quando uma TASK futura precisar deles de fato."
+      },
+      "SearchErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Message"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Request Id"
+          },
+          "correlation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Correlation Id"
+          },
+          "upstream_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Request Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id",
+          "correlation_id"
+        ],
+        "title": "SearchErrorDetail",
+        "description": "Detalhe de erro estável do endpoint Search."
+      },
+      "SearchErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/SearchErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "SearchErrorResponse",
+        "description": "Envelope público de erro do Central Web Search Gateway."
+      },
+      "SearchRequestPayload": {
+        "properties": {
+          "requirements": {
+            "$ref": "#/components/schemas/Requirements"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "max_results": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Results",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "requirements",
+          "query"
+        ],
+        "title": "SearchRequestPayload",
+        "description": "DTO HTTP público de uma requisição de busca.\n\nNão recebe ``application_id`` nem qualquer outro dado de identidade\nno corpo: quem está chamando é sempre resolvido pelo Core, nunca\ndeclarado pelo cliente dentro do payload."
+      },
+      "SearchResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Request Id"
+          },
+          "correlation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Correlation Id"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "provider_gateway": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Provider Gateway"
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Provider"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/SearchUsage"
+          },
+          "latency_ms": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Latency Ms"
+          },
+          "total_results_available": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Results Available"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          },
+          "fallback_used": {
+            "type": "boolean",
+            "title": "Fallback Used",
+            "default": false
+          },
+          "upstream_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Request Id"
+          },
+          "upstream_issues": {
+            "items": {
+              "$ref": "#/components/schemas/SearchUpstreamIssue"
+            },
+            "type": "array",
+            "title": "Upstream Issues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "correlation_id",
+          "provider_gateway",
+          "provider",
+          "usage",
+          "latency_ms"
+        ],
+        "title": "SearchResponse",
+        "description": "Forma neutra de uma resposta de busca devolvida pelo César Core."
+      },
+      "SearchResult": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "default": ""
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "url"
+        ],
+        "title": "SearchResult",
+        "description": "Um resultado individual de busca."
+      },
+      "SearchUpstreamIssue": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "code",
+          "message"
+        ],
+        "title": "SearchUpstreamIssue",
+        "description": "Falha parcial reportada pelo upstream sem invalidar a resposta."
+      },
+      "SearchUsage": {
+        "properties": {
+          "queries_used": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Queries Used"
+          },
+          "search_cost_usd": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Search Cost Usd"
+          },
+          "llm_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "queries_used",
+          "search_cost_usd"
+        ],
+        "title": "SearchUsage",
+        "description": "Uso normalizado da busca informado pelo gateway upstream."
       },
       "ServiceClass": {
         "type": "string",

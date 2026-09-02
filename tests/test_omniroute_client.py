@@ -6,6 +6,7 @@ import pytest
 
 from cesar_core.omniroute.client import (
     AUTH_PROBE_MODEL,
+    AUTH_PROBE_SEARCH_PROVIDER,
     AUTH_PROBE_TOKEN,
     CHAT_COMPLETIONS_PATH,
     REQUEST_ID_HEADER,
@@ -221,6 +222,54 @@ async def test_search_posts_to_the_search_endpoint(tmp_path: Path) -> None:
     response = await client.search({"query": "x"}, correlation_id="corr-1")
     assert response.status_code == 200
     assert response.body == {"query": "x", "results": []}
+    await client.aclose()
+
+
+async def test_search_authentication_probe_requires_401_or_403(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == SEARCH_PATH
+        assert request.headers["Authorization"] == f"Bearer {AUTH_PROBE_TOKEN}"
+        payload = json.loads(request.content)
+        assert payload["provider"] == AUTH_PROBE_SEARCH_PROVIDER
+        return httpx.Response(403, text="invalid key")
+
+    client = _client(tmp_path, handler)
+    assert await client.search_authentication_enforced() is True
+    await client.aclose()
+
+
+async def test_search_authentication_probe_rejects_anonymous_access(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path, lambda request: httpx.Response(400, text="unknown"))
+    assert await client.search_authentication_enforced() is False
+    await client.aclose()
+
+
+@pytest.mark.parametrize(
+    ("transport_error", "domain_error"),
+    [
+        (httpx.TimeoutException("slow"), OmniRouteTimeoutError),
+        (httpx.ConnectError("down"), OmniRouteConnectionError),
+    ],
+)
+async def test_search_authentication_probe_normalizes_transport_errors(
+    tmp_path: Path, transport_error: Exception, domain_error: type[Exception]
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        transport_error.request = request
+        raise transport_error
+
+    client = _client(tmp_path, handler)
+    with pytest.raises(domain_error):
+        await client.search_authentication_enforced()
+    await client.aclose()
+
+
+async def test_search_authentication_probe_raises_server_error(tmp_path: Path) -> None:
+    client = _client(tmp_path, lambda request: httpx.Response(500, text="boom"))
+    with pytest.raises(OmniRouteServerError):
+        await client.search_authentication_enforced()
     await client.aclose()
 
 

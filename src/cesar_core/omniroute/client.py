@@ -39,6 +39,7 @@ REQUEST_ID_HEADER = "x-request-id"
 CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
 SEARCH_PATH = "/v1/search"
 AUTH_PROBE_MODEL = "does-not-exist-cesar-core-auth-enforcement-probe"
+AUTH_PROBE_SEARCH_PROVIDER = "does-not-exist-cesar-core-auth-enforcement-probe"
 AUTH_PROBE_TOKEN = "sk-cesar-core-intentionally-invalid-auth-probe"
 
 
@@ -138,6 +139,42 @@ class OmniRouteClient:
         return await self.request(
             "POST", SEARCH_PATH, correlation_id=correlation_id, json=payload
         )
+
+    async def search_authentication_enforced(self) -> bool:
+        """Prova que a rota Search rejeita uma credencial inválida.
+
+        O provider deliberadamente inexistente impede uma busca externa caso
+        autenticação esteja desabilitada: nesse cenário inseguro o OmniRoute
+        devolve 400 após o auth gate, em vez de consumir um provider real.
+        """
+        headers = {
+            "Authorization": f"Bearer {AUTH_PROBE_TOKEN}",
+            REQUEST_ID_HEADER: "cesar-core-readiness-search-auth-probe",
+        }
+        payload = {
+            "query": "auth probe",
+            "provider": AUTH_PROBE_SEARCH_PROVIDER,
+            "max_results": 1,
+        }
+        try:
+            response = await self._http.post(
+                SEARCH_PATH,
+                json=payload,
+                headers=headers,
+            )
+        except httpx.TimeoutException as exc:
+            raise OmniRouteTimeoutError(
+                "OmniRoute search auth probe timed out"
+            ) from exc
+        except httpx.ConnectError as exc:
+            raise OmniRouteConnectionError(
+                "OmniRoute unreachable during search auth probe"
+            ) from exc
+        if response.status_code in (401, 403):
+            return True
+        if response.status_code >= 500:
+            self._raise_for_status(response)
+        return False
 
     async def request(
         self,

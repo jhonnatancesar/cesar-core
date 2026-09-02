@@ -27,7 +27,13 @@ Por padrão, o Core está `READY` com `ai`/`search`/`omniroute` em
 `NOT_CONFIGURED`. A TASK-118C habilita `ai` e `omniroute` somente quando a
 configuração AI está ativa e possui modelo. Nesse caso, `/ready` verifica o
 health real do OmniRoute e confirma que o endpoint de chat rejeita credencial
-inválida; Search permanece independente e `NOT_CONFIGURED`.
+inválida. A TASK-118D habilita `search` independentemente quando sua
+configuração está ativa e possui provider padrão; nesse caso `/ready` também
+confirma que `/v1/search` rejeita credencial inválida. `omniroute` fica
+`AVAILABLE` quando qualquer um dos dois gateways está configurado.
+Search também expõe `search_general_web` e
+`search_technical_documentation`, evitando que um target especializado seja
+interpretado como cobertura geral.
 
 Quando uma capacidade for habilitada, `get_readiness()`
 passa a refletir **somente** as dependências obrigatórias das

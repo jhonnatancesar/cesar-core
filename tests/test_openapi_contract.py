@@ -18,4 +18,5 @@ def test_openapi_contract_documents_the_current_endpoints() -> None:
         "/ready",
         "/v1/capabilities",
         "/v1/ai/generate",
+        "/v1/search",
     }

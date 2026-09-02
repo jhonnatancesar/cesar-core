@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ServiceStatus(StrEnum):
@@ -48,11 +48,23 @@ class CapabilitiesResponse(BaseModel):
 
     Semântica exata (ver ADR 0008): informa quais capacidades existem e
     seu estado -- é um inventário, não um gate de prontidão. O transporte
-    OmniRoute e AI são ``available`` somente quando o Central AI Gateway está
-    habilitado e possui um modelo configurado. Search permanece independente.
+    OmniRoute fica ``available`` quando ao menos um gateway de domínio está
+    configurado. AI e Search são reportados independentemente; Search também
+    explicita a cobertura semântica geral e de documentação técnica.
     """
 
     core: ServiceStatus = ServiceStatus.AVAILABLE
     ai: ServiceStatus = ServiceStatus.NOT_CONFIGURED
-    search: ServiceStatus = ServiceStatus.NOT_CONFIGURED
+    search: ServiceStatus = Field(
+        default=ServiceStatus.NOT_CONFIGURED,
+        description="Aggregated Search availability for at least one purpose.",
+    )
+    search_general_web: ServiceStatus = Field(
+        default=ServiceStatus.NOT_CONFIGURED,
+        description="General Web Search target availability.",
+    )
+    search_technical_documentation: ServiceStatus = Field(
+        default=ServiceStatus.NOT_CONFIGURED,
+        description="Technical-documentation Search target availability.",
+    )
     omniroute: ServiceStatus = ServiceStatus.NOT_CONFIGURED

@@ -10,6 +10,7 @@ from cesar_core.search.contracts import (
     SearchRequestPayload,
     SearchResponse,
     SearchResult,
+    SearchUsage,
 )
 
 
@@ -37,6 +38,11 @@ def test_ai_request_payload_has_no_identity_fields() -> None:
 def test_search_request_payload_has_no_identity_fields() -> None:
     assert "context" not in SearchRequestPayload.model_fields
     assert "application_id" not in SearchRequestPayload.model_fields
+
+
+def test_search_request_payload_normalizes_query_whitespace() -> None:
+    payload = SearchRequestPayload(requirements=_requirements(), query="  busca  ")
+    assert payload.query == "busca"
 
 
 def test_ai_request_extends_payload_with_trusted_context() -> None:
@@ -67,8 +73,13 @@ def test_search_request_extends_payload_with_trusted_context() -> None:
     )
     request = SearchRequest(context=_context(), **payload.model_dump())
     response = SearchResponse(
+        request_id="req-2",
         correlation_id="corr-2",
         results=[SearchResult(title="Oferta X", url="https://example.test/x")],
+        provider_gateway="omniroute",
+        provider="duckduckgo-free",
+        usage=SearchUsage(queries_used=1, search_cost_usd=0),
+        latency_ms=1,
     )
 
     assert request.query == "placa de vídeo RTX"
@@ -77,5 +88,12 @@ def test_search_request_extends_payload_with_trusted_context() -> None:
 
 
 def test_search_response_defaults_to_no_results() -> None:
-    response = SearchResponse(correlation_id="corr-3")
+    response = SearchResponse(
+        request_id="req-3",
+        correlation_id="corr-3",
+        provider_gateway="omniroute",
+        provider="duckduckgo-free",
+        usage=SearchUsage(queries_used=1, search_cost_usd=0),
+        latency_ms=1,
+    )
     assert response.results == []

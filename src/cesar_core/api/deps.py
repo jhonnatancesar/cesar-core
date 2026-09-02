@@ -1,8 +1,8 @@
 """Dependências FastAPI compartilhadas pelas rotas do César Core.
 
-``POST /v1/ai/generate`` usa uma variante request-aware de
-``get_application_context``. Search deverá adotar a mesma fronteira: contexto
-confiável nos headers/dependencies e payload funcional no body.
+``POST /v1/ai/generate`` e ``POST /v1/search`` usam uma variante request-aware
+de ``get_application_context``: contexto confiável nos headers/dependencies e
+payload funcional no body.
 
 ``X-Application-Id`` NÃO é autoridade de segurança em produção -- é um
 valor arbitrário que qualquer chamador pode declarar. Ele existe aqui
@@ -21,7 +21,10 @@ from cesar_core.ai.config import AIConfig
 from cesar_core.ai.contracts import AIRequest, AIResponse
 from cesar_core.ai.errors import AIUpstreamUnavailableError
 from cesar_core.ai.manager import AIManager
-from cesar_core.ai.policy import WILDCARD_PURPOSE, AIModelTarget, AIPolicy, PolicyKey
+from cesar_core.ai.policy import (
+    WILDCARD_PURPOSE as AI_WILDCARD_PURPOSE,
+)
+from cesar_core.ai.policy import AIModelTarget, AIPolicy, PolicyKey
 from cesar_core.ai.providers.omniroute import OmniRouteAIProvider
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
@@ -29,6 +32,19 @@ from cesar_core.omniroute.client import OmniRouteClient
 from cesar_core.omniroute.config import OmniRouteConfig
 from cesar_core.policy.purpose import Purpose
 from cesar_core.policy.service_class import ServiceClass
+from cesar_core.search.config import TECHNICAL_DOCUMENTATION_PURPOSE, SearchConfig
+from cesar_core.search.contracts import SearchRequest, SearchResponse
+from cesar_core.search.errors import SearchUpstreamUnavailableError
+from cesar_core.search.manager import SearchManager
+from cesar_core.search.policy import (
+    WILDCARD_PURPOSE as SEARCH_WILDCARD_PURPOSE,
+)
+from cesar_core.search.policy import PolicyKey as SearchPolicyKey
+from cesar_core.search.policy import (
+    SearchPolicy,
+    SearchProviderTarget,
+)
+from cesar_core.search.providers.omniroute import OmniRouteSearchProvider
 from cesar_core.telemetry.correlation import CORRELATION_HEADER, resolve_correlation_id
 from cesar_core.telemetry.request_id import new_request_id
 
@@ -87,7 +103,7 @@ async def get_ai_manager() -> AsyncIterator[AIManager]:
     for service_class in ServiceClass:
         model = config.model_for(service_class)
         if model is not None:
-            rules[(ApplicationId.GG_OFERTA, WILDCARD_PURPOSE, service_class)] = (
+            rules[(ApplicationId.GG_OFERTA, AI_WILDCARD_PURPOSE, service_class)] = (
                 AIModelTarget(
                     model=model,
                     provider=config.provider or None,
@@ -126,4 +142,72 @@ class _UnavailableAIProvider:
     async def complete(
         self, request: AIRequest, *, target: AIModelTarget
     ) -> AIResponse:
+        raise self._error
+
+
+async def get_search_manager() -> AsyncIterator[SearchManager]:
+    """Constrói o runtime Search configurado por variáveis de ambiente."""
+    config = SearchConfig()
+    if not config.is_configured:
+        yield SearchManager(_UnavailableSearchProvider(), SearchPolicy({}))
+        return
+
+    rules: dict[SearchPolicyKey, SearchProviderTarget] = {}
+    for service_class in ServiceClass:
+        provider = config.provider_for(service_class)
+        if provider is not None:
+            rules[
+                (
+                    ApplicationId.GG_OFERTA,
+                    SEARCH_WILDCARD_PURPOSE,
+                    service_class,
+                )
+            ] = SearchProviderTarget(
+                provider=provider,
+                paid=config.provider_is_paid,
+                max_results_limit=config.max_results_limit,
+            )
+        documentation_provider = config.normalized_technical_documentation_provider
+        if documentation_provider is not None:
+            rules[
+                (
+                    ApplicationId.GG_OFERTA,
+                    TECHNICAL_DOCUMENTATION_PURPOSE,
+                    service_class,
+                )
+            ] = SearchProviderTarget(
+                provider=documentation_provider,
+                paid=config.provider_is_paid,
+                max_results_limit=config.max_results_limit,
+            )
+
+    try:
+        omniroute_config = OmniRouteConfig()
+    except ValueError:
+        yield SearchManager(
+            _UnavailableSearchProvider(
+                SearchUpstreamUnavailableError("OmniRoute is not configured")
+            ),
+            SearchPolicy(rules),
+        )
+        return
+
+    client = OmniRouteClient(omniroute_config)
+    try:
+        yield SearchManager(OmniRouteSearchProvider(client), SearchPolicy(rules))
+    finally:
+        await client.aclose()
+
+
+class _UnavailableSearchProvider:
+    """Provider sentinela para produzir erros públicos normalizados."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error or SearchUpstreamUnavailableError(
+            "Central Web Search Gateway is not configured"
+        )
+
+    async def search(
+        self, request: SearchRequest, *, target: SearchProviderTarget
+    ) -> SearchResponse:
         raise self._error

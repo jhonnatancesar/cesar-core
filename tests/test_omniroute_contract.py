@@ -11,7 +11,7 @@ Pulados automaticamente quando não há uma credencial local configurada,
 para que o restante da suíte (ruff/pytest/cobertura) continue verde sem
 depender de infraestrutura viva.
 
-Dez superfícies reais:
+Superfícies reais:
   A. health  -- GET /api/health, sem autenticação, sem provider pago.
   B. search  -- POST /v1/search, sem provider especificado; o OmniRoute
      promove "duckduckgo-free" (fallback zero-config, sem credencial)
@@ -30,11 +30,15 @@ Dez superfícies reais:
   H. timeout -- timeout de socket real vira `AIUpstreamUnavailableError`.
   I. indisponibilidade -- conexão recusada real recebe a mesma normalização.
   J. max tokens -- usage real acima do hard cap é rejeitado pelo adapter.
+  K. Search adapter -- captura payload/auth reais e normaliza resultado + usage.
+  L. Search endpoint -- rota, policy, manager e adapter contra OmniRoute real.
+  M. Search error -- provider inválido vira erro de domínio normalizado.
 """
 
 import json
 import socket
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -61,6 +65,10 @@ from cesar_core.policy.cost_policy import CostPolicy
 from cesar_core.policy.purpose import Purpose
 from cesar_core.policy.requirements import Requirements
 from cesar_core.policy.service_class import ServiceClass
+from cesar_core.search.contracts import SearchRequest
+from cesar_core.search.errors import SearchUpstreamRequestError
+from cesar_core.search.policy import SearchProviderTarget
+from cesar_core.search.providers.omniroute import OmniRouteSearchProvider
 
 DEFAULT_KEY_FILE = Path(r"C:\cesar-core\.secrets\omniroute_api_key")
 REAL_FREE_MODEL = "auto/best-free"
@@ -87,10 +95,17 @@ class CapturingTransport(httpx.AsyncBaseTransport):
     def __init__(self) -> None:
         self.inner = httpx.AsyncHTTPTransport()
         self.chat_payloads: list[dict] = []
+        self.search_payloads: list[dict] = []
+        self.search_authenticated: list[bool] = []
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/chat/completions":
             self.chat_payloads.append(json.loads(request.content))
+        if request.url.path == "/v1/search":
+            self.search_payloads.append(json.loads(request.content))
+            self.search_authenticated.append(
+                request.headers.get("Authorization", "").startswith("Bearer ")
+            )
         return await self.inner.handle_async_request(request)
 
     async def aclose(self) -> None:
@@ -120,6 +135,147 @@ async def test_b_search_against_real_omniroute_using_the_free_fallback_provider(
     assert isinstance(response.body["results"], list)
     assert response.upstream_request_id
     await client.aclose()
+
+
+async def test_search_adapter_normalizes_real_omniroute_response_and_usage() -> None:
+    """Prova payload, resultados, max_results e cache reais da 118D."""
+    query = f"Python programming language official documentation {uuid4()}"
+    transport = CapturingTransport()
+    client = OmniRouteClient(
+        OmniRouteConfig(api_key_file=DEFAULT_KEY_FILE), transport=transport
+    )
+    provider = OmniRouteSearchProvider(client)
+    request = SearchRequest(
+        context=ApplicationContext(
+            application_id=ApplicationId.GG_OFERTA,
+            service="contract_test",
+            purpose=Purpose(value="search_contract_validation"),
+            request_id="contract-search-request",
+            correlation_id="contract-search-correlation",
+        ),
+        requirements=Requirements(
+            service_class=ServiceClass.ECONOMY,
+            cost_policy=CostPolicy.FREE_ONLY,
+        ),
+        query=query,
+        max_results=3,
+    )
+    try:
+        first = await provider.search(
+            request, target=SearchProviderTarget("context7", paid=False)
+        )
+        second = await provider.search(
+            request, target=SearchProviderTarget("context7", paid=False)
+        )
+    finally:
+        await client.aclose()
+
+    expected_payload = {
+        "query": query,
+        "provider": "context7",
+        "search_type": "web",
+        "max_results": 3,
+    }
+    assert transport.search_payloads == [expected_payload, expected_payload]
+    assert transport.search_authenticated == [True, True]
+    assert first.request_id == "contract-search-request"
+    assert first.correlation_id == "contract-search-correlation"
+    assert first.provider_gateway == "omniroute"
+    assert first.provider == "context7"
+    assert first.usage.queries_used == 1
+    assert first.usage.search_cost_usd == 0
+    assert first.cached is False
+    assert first.fallback_used is False
+    assert first.upstream_request_id
+    assert 1 <= len(first.results) <= 3
+    result = first.results[0]
+    assert result.title
+    assert result.url.startswith("https://")
+    assert result.snippet
+    assert result.position == 1
+    assert second.cached is True
+    assert second.usage.queries_used == 0
+    assert second.usage.search_cost_usd == 0
+    assert second.results == first.results
+
+
+async def test_search_endpoint_runs_real_policy_manager_adapter_and_gateway(
+    monkeypatch,
+) -> None:
+    """Prova config -> rota -> policy -> manager -> adapter -> OmniRoute."""
+    monkeypatch.setenv("CESAR_CORE_SEARCH_ENABLED", "true")
+    monkeypatch.delenv("CESAR_CORE_SEARCH_DEFAULT_PROVIDER", raising=False)
+    monkeypatch.setenv("CESAR_CORE_SEARCH_TECHNICAL_DOCUMENTATION_PROVIDER", "context7")
+    monkeypatch.setenv("CESAR_CORE_SEARCH_PROVIDER_IS_PAID", "false")
+    monkeypatch.setenv("CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT", "3")
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(DEFAULT_KEY_FILE))
+
+    response = TestClient(app).post(
+        "/v1/search",
+        headers={
+            "X-Application-Id": "gg_oferta",
+            "X-Service": "contract_test",
+            "X-Purpose": "technical_documentation",
+            "X-Correlation-Id": "contract-search-endpoint-correlation",
+        },
+        json={
+            "requirements": {
+                "service_class": "economy",
+                "cost_policy": "free_only",
+            },
+            "query": (f"Python programming language official documentation {uuid4()}"),
+            "max_results": 3,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["provider_gateway"] == "omniroute"
+    assert body["provider"] == "context7"
+    assert body["usage"] == {
+        "queries_used": 1,
+        "search_cost_usd": 0.0,
+        "llm_tokens": None,
+    }
+    assert body["correlation_id"] == "contract-search-endpoint-correlation"
+    assert body["request_id"]
+    assert body["upstream_request_id"]
+    assert 1 <= len(body["results"]) <= 3
+    assert body["results"][0]["title"]
+    assert body["results"][0]["url"].startswith("https://")
+    assert body["results"][0]["snippet"]
+    assert body["results"][0]["position"] == 1
+
+
+async def test_search_adapter_normalizes_real_provider_request_error() -> None:
+    client = _client()
+    request = SearchRequest(
+        context=ApplicationContext(
+            application_id=ApplicationId.GG_OFERTA,
+            service="contract_test",
+            purpose=Purpose(value="search_error_validation"),
+            request_id="contract-search-error-request",
+            correlation_id="contract-search-error-correlation",
+        ),
+        requirements=Requirements(
+            service_class=ServiceClass.ECONOMY,
+            cost_policy=CostPolicy.FREE_ONLY,
+        ),
+        query="must not reach an external provider",
+        max_results=1,
+    )
+    try:
+        with pytest.raises(SearchUpstreamRequestError) as exc_info:
+            await OmniRouteSearchProvider(client).search(
+                request,
+                target=SearchProviderTarget(
+                    "does-not-exist-cesar-core-search-contract"
+                ),
+            )
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.upstream_request_id
+    finally:
+        await client.aclose()
 
 
 async def test_c_chat_completions_against_real_omniroute_unresolvable_model_is_a_client_error() -> (

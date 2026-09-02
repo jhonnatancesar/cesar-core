@@ -14,6 +14,10 @@ transporte de baixo nível para health, chat completions e search. A decisão
 abaixo está consolidada no estado atual; detalhes estão nos ADRs 0011, 0012
 e 0013.
 
+**Atualização (TASK-118C/118D)**: os dois adapters de domínio foram
+implementados separadamente, em `ai/providers/omniroute.py` e
+`search/providers/omniroute.py` (ADRs 0014 e 0015).
+
 ## Nota de escopo (TASK-118B): quem é dona de que
 
 Confusão a evitar: **118B é dona do transporte HTTP de baixo nível para
@@ -45,7 +49,7 @@ Core, para que AI e Search não compartilhem uma abstração indevida.
 - AI e Search consumirão esse client por adapters próprios:
   `ai/providers/omniroute.py` implementando `AIProvider` e
   `search/providers/omniroute.py` implementando `SearchProvider`. Esses
-  adapters ainda não existem no estado atual.
+  adapters existem e permanecem independentes.
 - Configuração de providers upstream (Gemini/Groq/OpenRouter) pertence ao
   runtime OmniRoute. `OmniRouteConfig` contém apenas base URL, timeout e o
   caminho do arquivo com a chave usada pelo César Core.

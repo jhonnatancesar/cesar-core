@@ -15,7 +15,7 @@ def test_search_provider_cannot_be_instantiated() -> None:
         SearchProvider()
 
 
-def test_search_provider_has_no_real_implementation() -> None:
+def test_search_provider_remains_a_transport_agnostic_protocol() -> None:
     source = inspect.getsource(SearchProvider)
     assert "..." in source
     assert "http" not in source.lower()

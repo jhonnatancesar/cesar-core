@@ -17,9 +17,13 @@ O OpenAPI atual publica somente:
 - `GET /health`;
 - `GET /ready`;
 - `GET /v1/capabilities`;
-- `POST /v1/ai/generate`.
+- `POST /v1/ai/generate`;
+- `POST /v1/search`.
 
-Os DTOs públicos de AI agora fazem parte do OpenAPI. Os modelos de Search
-continuam internos até a TASK-118D. O `OmniRouteClient` é uma dependência de
-transporte e não expõe diretamente suas rotas upstream no OpenAPI do César
-Core.
+Os DTOs públicos neutros de AI e Search fazem parte do OpenAPI. O
+`OmniRouteClient` é uma dependência de transporte e não expõe diretamente
+suas rotas upstream no OpenAPI do César Core.
+
+Capabilities diferencia `search_general_web` de
+`search_technical_documentation`: disponibilidade de um target especializado
+não implica cobertura de busca Web geral.

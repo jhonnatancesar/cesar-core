@@ -13,6 +13,7 @@ from cesar_core.health.models import (
 from cesar_core.omniroute.client import OmniRouteClient
 from cesar_core.omniroute.config import OmniRouteConfig
 from cesar_core.omniroute.errors import OmniRouteError
+from cesar_core.search.config import SearchConfig
 
 
 def get_health() -> HealthStatus:
@@ -24,18 +25,16 @@ def get_readiness(
     *,
     dependencies_ready: bool | None = None,
     ai_config: AIConfig | None = None,
+    search_config: SearchConfig | None = None,
 ) -> ReadinessStatus:
     """César Core apto a atender as capacidades atualmente habilitadas.
 
-    Readiness é derivado de ``get_capabilities()``, não de um valor
-    hardcoded independente: no estado atual nenhuma capacidade de domínio
-    está habilitada, então não há dependência obrigatória a checar e o
-    core está pronto. Uma mudança que habilitar uma
-    capacidade DEVE substituir a lista vazia abaixo por uma checagem
-    real da dependência obrigatória dela -- nunca reportar "ok" para uma
-    capacidade habilitada com dependência quebrada.
+    Readiness é derivado de ``get_capabilities()``, não de um valor hardcoded.
+    Sem capacidade configurada, não há dependência obrigatória e o Core está
+    pronto. Quando AI ou Search está habilitado, ``dependencies_ready`` deve
+    representar os probes reais exigidos pela capacidade.
     """
-    capabilities = get_capabilities(ai_config=ai_config)
+    capabilities = get_capabilities(ai_config=ai_config, search_config=search_config)
     enabled = [
         status
         for status in (capabilities.ai, capabilities.search, capabilities.omniroute)
@@ -47,36 +46,82 @@ def get_readiness(
     )
 
 
-def get_capabilities(*, ai_config: AIConfig | None = None) -> CapabilitiesResponse:
+def get_capabilities(
+    *,
+    ai_config: AIConfig | None = None,
+    search_config: SearchConfig | None = None,
+) -> CapabilitiesResponse:
     """Capacidades habilitadas pela configuração atual."""
-    config = ai_config or AIConfig()
-    if not config.is_configured:
-        return CapabilitiesResponse()
+    ai = ai_config or AIConfig()
+    search = search_config or SearchConfig()
     return CapabilitiesResponse(
-        ai=ServiceStatus.AVAILABLE,
-        omniroute=ServiceStatus.AVAILABLE,
+        ai=(
+            ServiceStatus.AVAILABLE
+            if ai.is_configured
+            else ServiceStatus.NOT_CONFIGURED
+        ),
+        search=(
+            ServiceStatus.AVAILABLE
+            if search.is_configured
+            else ServiceStatus.NOT_CONFIGURED
+        ),
+        search_general_web=(
+            ServiceStatus.AVAILABLE
+            if search.enabled and search.has_general_web_provider
+            else ServiceStatus.NOT_CONFIGURED
+        ),
+        search_technical_documentation=(
+            ServiceStatus.AVAILABLE
+            if search.enabled
+            and search.normalized_technical_documentation_provider is not None
+            else ServiceStatus.NOT_CONFIGURED
+        ),
+        omniroute=(
+            ServiceStatus.AVAILABLE
+            if ai.is_configured or search.is_configured
+            else ServiceStatus.NOT_CONFIGURED
+        ),
     )
 
 
 async def probe_readiness() -> ReadinessStatus:
-    """Confirma a dependência OmniRoute quando AI estiver habilitada."""
+    """Confirma OmniRoute e auth das capacidades habilitadas."""
     ai_config = AIConfig()
-    if not ai_config.is_configured:
-        return get_readiness(ai_config=ai_config)
+    search_config = SearchConfig()
+    if not ai_config.is_configured and not search_config.is_configured:
+        return get_readiness(ai_config=ai_config, search_config=search_config)
 
     try:
         client = OmniRouteClient(OmniRouteConfig())
     except ValueError:
-        return get_readiness(ai_config=ai_config, dependencies_ready=False)
+        return get_readiness(
+            ai_config=ai_config,
+            search_config=search_config,
+            dependencies_ready=False,
+        )
 
     try:
         await client.health()
-        authentication_enforced = await client.chat_authentication_enforced()
+        authentication_enforced = True
+        if ai_config.is_configured:
+            authentication_enforced = (
+                authentication_enforced and await client.chat_authentication_enforced()
+            )
+        if search_config.is_configured:
+            authentication_enforced = (
+                authentication_enforced
+                and await client.search_authentication_enforced()
+            )
     except (OmniRouteError, OSError):
-        return get_readiness(ai_config=ai_config, dependencies_ready=False)
+        return get_readiness(
+            ai_config=ai_config,
+            search_config=search_config,
+            dependencies_ready=False,
+        )
     finally:
         await client.aclose()
     return get_readiness(
         ai_config=ai_config,
+        search_config=search_config,
         dependencies_ready=authentication_enforced,
     )
