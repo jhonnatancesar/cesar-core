@@ -31,7 +31,9 @@ class OmniRouteAIProvider:
     ) -> AIResponse:
         payload: dict[str, Any] = {
             "model": target.model,
-            "messages": [{"role": "user", "content": request.prompt}],
+            "messages": [
+                message.model_dump(mode="json") for message in request.messages
+            ],
         }
         if target.provider is not None:
             payload["provider"] = target.provider

@@ -36,7 +36,7 @@ def _request(
             service_class=ServiceClass.ECONOMY,
             cost_policy=cost,
         ),
-        prompt="ping",
+        messages=({"role": "user", "content": "ping"},),
         max_tokens=max_tokens,
     )
 

@@ -39,7 +39,7 @@ def _request() -> AIRequest:
             service_class=ServiceClass.STANDARD,
             cost_policy=CostPolicy.FREE_PREFERRED,
         ),
-        prompt="ping",
+        messages=({"role": "user", "content": "ping"},),
     )
 
 

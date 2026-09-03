@@ -20,10 +20,13 @@ Duas camadas, uma única fonte de verdade para identidade:
 
 - **DTO HTTP público** (`AIRequestPayload`, `SearchRequestPayload`) --
   o que um endpoint aceitaria como corpo de requisição. Contém somente
-  payload funcional (`prompt`/`query`) e `requirements`. **Nunca**
+  payload funcional (`prompt` ou `messages` em AI; `query` em Search) e `requirements`. **Nunca**
   contém `application_id` nem qualquer outro dado de identidade.
 - **Requisição interna de domínio** (`AIRequest`, `SearchRequest`) --
-  estende o DTO público adicionando `context: ApplicationContext`. É
+  contém `context: ApplicationContext`. Desde a 118F, `AIRequest` não herda
+  o DTO: contém apenas mensagens tipadas normalizadas, requirements e limite.
+  O adapter HTTP converte prompt legado em uma mensagem user, ou preserva
+  integralmente a lista tipada. `SearchRequest` mantém seu contrato anterior. É
   criada exclusivamente pelo próprio César Core, nunca deserializada
   diretamente do corpo de uma requisição HTTP.
 

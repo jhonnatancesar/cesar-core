@@ -125,6 +125,15 @@ CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE=.secrets/ggoferta-core-client
 ```
 
 O modelo não é aceito no body público: ele é escolhido pela policy interna.
+
+Na TASK-118F, AI aceita **exatamente um** formato de entrada (além de
+`requirements` e do `max_tokens` opcional): `{"prompt":"texto"}` ou
+`{"messages":[{"role":"system","content":"instrução"},{"role":"user","content":"texto"}]}`.
+`prompt` permanece compatível e vira uma mensagem `user`, sem alterar seu texto.
+`messages` aceita somente `system`, `user` e `assistant`, com conteúdo textual
+não vazio, preservando roles e ordem até o OmniRoute, sem concatenação.
+Ambos, nenhum ou mensagens inválidas retornam 400 `ai_invalid_request`, antes
+do upstream, sem ecoar conteúdo. Auth, quota e policies continuam obrigatórias.
 `ECONOMY_MODEL`, `STANDARD_MODEL` e `QUALITY_MODEL` permitem overrides por
 classe de serviço. `FREE_ONLY` rejeita um alvo marcado como pago.
 

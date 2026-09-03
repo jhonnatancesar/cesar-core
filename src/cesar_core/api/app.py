@@ -3,6 +3,8 @@
 from time import perf_counter
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from cesar_core.api.routes import ai, capabilities, health, metrics, search
@@ -20,6 +22,24 @@ from cesar_core.telemetry.tracing import trace_http_completion
 
 def create_app() -> FastAPI:
     app = FastAPI(title="César Core", version="0.1.0")
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation(request: Request, exc: RequestValidationError):
+        if request.url.path == "/v1/ai/generate":
+            # Não ecoar input/ctx de ValidationError: podem conter instruções privadas.
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": {
+                        "code": "ai_invalid_request",
+                        "message": "Invalid AI request: provide exactly one valid prompt or messages",
+                        "request_id": request.state.request_id,
+                        "correlation_id": request.state.correlation_id,
+                        "upstream_request_id": None,
+                    }
+                },
+            )
+        return await request_validation_exception_handler(request, exc)
 
     @app.middleware("http")
     async def attach_correlation_id(request: Request, call_next):

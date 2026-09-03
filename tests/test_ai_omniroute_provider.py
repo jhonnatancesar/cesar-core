@@ -66,7 +66,7 @@ def _request() -> AIRequest:
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
         ),
-        prompt="normalize",
+        messages=({"role": "user", "content": "normalize"},),
         max_tokens=50,
     )
 

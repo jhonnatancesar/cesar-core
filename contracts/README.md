@@ -26,6 +26,13 @@ quota usam envelopes normalizados com request/correlation IDs. O endpoint
 operacional `GET /metrics` exporta Prometheus text e fica deliberadamente fora
 do OpenAPI de produto.
 
+AI (118F): fornecer exatamente um de `prompt` ou `messages`. O legado `prompt`
+vira uma única mensagem `user`; a lista tipada preserva ordem e roles
+`system|user|assistant`. Lista vazia, conteúdo não textual/em branco, role
+inválido, ambos os campos ou nenhum retornam 400 normalizado. Não há streaming,
+tools nem multimodal. `AIRequest` interno contém somente mensagens normalizadas
+e não herda o DTO HTTP. Conteúdo das mensagens não é registrado em telemetria.
+
 Os DTOs públicos neutros de AI e Search fazem parte do OpenAPI. O
 `OmniRouteClient` é uma dependência de transporte e não expõe diretamente
 suas rotas upstream no OpenAPI do César Core.

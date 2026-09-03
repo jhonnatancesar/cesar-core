@@ -6,7 +6,6 @@ from fastapi.responses import JSONResponse
 from cesar_core.ai.contracts import (
     AIErrorDetail,
     AIErrorResponse,
-    AIRequest,
     AIRequestPayload,
     AIResponse,
 )
@@ -35,6 +34,7 @@ router = APIRouter(prefix="/v1/ai", tags=["ai"])
     "/generate",
     response_model=AIResponse,
     responses={
+        400: {"model": AIErrorResponse},
         403: {"model": AIErrorResponse},
         401: {"model": SecurityErrorResponse},
         429: {"model": SecurityErrorResponse},
@@ -47,7 +47,7 @@ async def generate_ai(
     context: ApplicationContext = Depends(get_ai_application_context),
     manager: AIManager = Depends(get_ai_manager),
 ) -> AIResponse | JSONResponse:
-    request = AIRequest(context=context, **payload.model_dump())
+    request = payload.to_domain(context)
     try:
         response = await manager.generate(request)
         METRICS.observe_ai(context.application_id, response)

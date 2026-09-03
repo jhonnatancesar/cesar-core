@@ -349,7 +349,7 @@ async def test_ai_adapter_normalizes_real_omniroute_client_error() -> None:
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
         ),
-        prompt="ping",
+        messages=({"role": "user", "content": "ping"},),
     )
     with pytest.raises(AIUpstreamRequestError) as exc_info:
         await provider.complete(
@@ -474,7 +474,12 @@ async def _assert_real_cap_and_response_validation(cap: int) -> None:
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
         ),
-        prompt="Reply with exactly: CESAR_CORE_MAX_TOKENS_PROBE",
+        messages=(
+            {
+                "role": "user",
+                "content": "Reply with exactly: CESAR_CORE_MAX_TOKENS_PROBE",
+            },
+        ),
         max_tokens=cap,
     )
     response = None
@@ -495,7 +500,9 @@ async def _assert_real_cap_and_response_validation(cap: int) -> None:
     assert transport.chat_payloads == [
         {
             "model": REAL_MAX_TOKENS_MODEL,
-            "messages": [{"role": "user", "content": request.prompt}],
+            "messages": [
+                message.model_dump(mode="json") for message in request.messages
+            ],
             "max_tokens": cap,
         }
     ]
@@ -651,7 +658,7 @@ async def test_ai_adapter_normalizes_real_authentication_error() -> None:
                 service_class=ServiceClass.ECONOMY,
                 cost_policy=CostPolicy.FREE_ONLY,
             ),
-            prompt="ping",
+            messages=({"role": "user", "content": "ping"},),
         )
         with pytest.raises(AIUpstreamAuthError) as exc_info:
             await provider.complete(request, target=AIModelTarget(REAL_FREE_MODEL))
@@ -659,6 +666,93 @@ async def test_ai_adapter_normalizes_real_authentication_error() -> None:
         await client.aclose()
     finally:
         bad_key_file.unlink(missing_ok=True)
+
+
+async def test_real_typed_messages_preserve_roles_and_order(
+    monkeypatch, caplog
+) -> None:
+    """118F: HTTP Core e payload real OmniRoute, sem concatenar instruções."""
+    core_key = DEFAULT_KEY_FILE.parent / "ggoferta-core-client-dev"
+    consumer_key = Path(
+        "C:/AIShoppingAgent/AIShoppingAgent/.secrets/cesar-core-client-dev"
+    )
+    if not core_key.exists() or not consumer_key.exists():
+        pytest.skip("Requires the separately provisioned 118F DEV credential files")
+    token = consumer_key.read_text().strip()
+    monkeypatch.setenv("CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE", str(core_key))
+    transport = CapturingTransport()
+    policy = AIPolicy(
+        {
+            (
+                ApplicationId.GG_OFERTA,
+                "typed_roles_validation",
+                ServiceClass.ECONOMY,
+            ): AIModelTarget(
+                REAL_MAX_TOKENS_MODEL, enforces_max_tokens=True, max_tokens_limit=512
+            )
+        }
+    )
+
+    async def manager():
+        async with OmniRouteClient(
+            OmniRouteConfig(api_key_file=DEFAULT_KEY_FILE, timeout_seconds=90),
+            transport=transport,
+        ) as gateway:
+            yield AIManager(OmniRouteAIProvider(gateway), policy)
+
+    messages = [
+        {"role": "system", "content": "Responda exatamente com a palavra CAPPED."},
+        {"role": "user", "content": "Qual palavra você deve responder?"},
+    ]
+    app.dependency_overrides[get_ai_manager] = manager
+    try:
+        response = TestClient(app).post(
+            "/v1/ai/generate",
+            headers={
+                "Authorization": "Bearer " + token,
+                "X-Service": "contract_test",
+                "X-Purpose": "typed_roles_validation",
+                "X-Correlation-Id": "118f-typed-roles",
+            },
+            json={
+                "requirements": {
+                    "service_class": "economy",
+                    "cost_policy": "free_only",
+                },
+                "messages": messages,
+                "max_tokens": 512,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_ai_manager, None)
+    assert response.status_code == 200
+    assert transport.chat_payloads == [
+        {
+            "model": REAL_MAX_TOKENS_MODEL,
+            "messages": messages,
+            "max_tokens": 512,
+        }
+    ]
+    body = response.json()
+    assert body["content"].strip() == "CAPPED"
+    assert body["model"] == "mimo-v2.5-free"
+    assert 0 < body["usage"]["completion_tokens"] <= 512
+    assert body["upstream_request_id"]
+    assert token not in response.text + caplog.text
+    assert all(message["content"] not in caplog.text for message in messages)
+    print(
+        json.dumps(
+            {
+                "harmless_test_payload": transport.chat_payloads[0],
+                "canonical_model": body["model"],
+                "content": body["content"],
+                "usage": body["usage"],
+                "roles_preserved": True,
+                "secret_and_message_log_scan": "PASS",
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def test_readiness_and_capabilities_with_real_enabled_ai(monkeypatch, tmp_path) -> None:
@@ -697,7 +791,9 @@ async def test_ai_adapter_normalizes_real_timeout() -> None:
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
         ),
-        prompt="Reply with exactly: TIMEOUT_SHOULD_WIN",
+        messages=(
+            {"role": "user", "content": "Reply with exactly: TIMEOUT_SHOULD_WIN"},
+        ),
     )
     try:
         with pytest.raises(AIUpstreamUnavailableError):
@@ -731,7 +827,7 @@ async def test_ai_adapter_normalizes_real_connection_refusal() -> None:
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
         ),
-        prompt="ping",
+        messages=({"role": "user", "content": "ping"},),
     )
     try:
         with pytest.raises(AIUpstreamUnavailableError):

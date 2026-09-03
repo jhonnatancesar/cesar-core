@@ -14,10 +14,26 @@ com um ``AIRequestPayload`` já validado. ``POST /v1/ai/generate`` executa esse
 fluxo sem aceitar identidade no body.
 """
 
-from pydantic import BaseModel, Field
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.policy.requirements import Requirements
+
+
+class AIMessageRole(StrEnum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class AIMessage(BaseModel):
+    """Mensagem textual de domínio; independente do envelope HTTP."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    role: AIMessageRole
+    content: str = Field(strict=True, min_length=1)
 
 
 class AIRequestPayload(BaseModel):
@@ -28,8 +44,15 @@ class AIRequestPayload(BaseModel):
     declarado pelo cliente dentro do payload.
     """
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "oneOf": [{"required": ["prompt"]}, {"required": ["messages"]}],
+        }
+    )
+
     requirements: Requirements
-    prompt: str = Field(min_length=1)
+    prompt: str | None = Field(default=None, min_length=1)
+    messages: list[AIMessage] | None = Field(default=None, min_length=1)
     max_tokens: int | None = Field(
         default=None,
         ge=1,
@@ -39,8 +62,40 @@ class AIRequestPayload(BaseModel):
         ),
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def exactly_one_input(cls, value):
+        if isinstance(value, dict) and (("prompt" in value) == ("messages" in value)):
+            raise ValueError("Provide exactly one of prompt or messages")
+        return value
 
-class AIRequest(AIRequestPayload):
+    @model_validator(mode="after")
+    def require_input(self):
+        if self.prompt is None and self.messages is None:
+            raise ValueError("Provide exactly one of prompt or messages")
+        return self
+
+    @field_validator("messages")
+    @classmethod
+    def require_text_content(cls, messages):
+        if messages is not None and any(not item.content.strip() for item in messages):
+            raise ValueError("Message content must not be blank")
+        return messages
+
+    def to_domain(self, context: ApplicationContext) -> "AIRequest":
+        messages = self.messages
+        if messages is None:
+            assert self.prompt is not None
+            messages = [AIMessage(role=AIMessageRole.USER, content=self.prompt)]
+        return AIRequest(
+            context=context,
+            requirements=self.requirements,
+            messages=tuple(messages),
+            max_tokens=self.max_tokens,
+        )
+
+
+class AIRequest(BaseModel):
     """Requisição interna de domínio: contexto confiável + payload.
 
     Só o César Core cria esta instância, depois de resolver
@@ -49,6 +104,9 @@ class AIRequest(AIRequestPayload):
     """
 
     context: ApplicationContext
+    requirements: Requirements
+    messages: tuple[AIMessage, ...] = Field(min_length=1)
+    max_tokens: int | None = Field(default=None, ge=1)
 
 
 class AIUsage(BaseModel):

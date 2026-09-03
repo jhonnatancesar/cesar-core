@@ -1,4 +1,4 @@
-from cesar_core.ai.contracts import AIRequest, AIRequestPayload, AIResponse
+from cesar_core.ai.contracts import AIRequestPayload, AIResponse
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
 from cesar_core.policy.cost_policy import CostPolicy
@@ -49,7 +49,7 @@ def test_ai_request_extends_payload_with_trusted_context() -> None:
     payload = AIRequestPayload(
         requirements=_requirements(), prompt="qual o menor preço?"
     )
-    request = AIRequest(context=_context(), **payload.model_dump())
+    request = payload.to_domain(_context())
     response = AIResponse(
         request_id="req-1",
         correlation_id="corr-1",
@@ -62,7 +62,8 @@ def test_ai_request_extends_payload_with_trusted_context() -> None:
     assert request.context.application_id is ApplicationId.GG_OFERTA
     assert request.context.service == "collection_worker"
     assert request.context.purpose.value == "market_research"
-    assert request.prompt == "qual o menor preço?"
+    assert request.messages[0].role == "user"
+    assert request.messages[0].content == "qual o menor preço?"
     assert response.content == "resposta"
     assert response.usage is None
 
