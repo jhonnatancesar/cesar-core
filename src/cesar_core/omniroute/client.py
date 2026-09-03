@@ -127,6 +127,18 @@ class OmniRouteClient:
             self._raise_for_status(response)
         return False
 
+    async def chat_credential_accepted(self) -> bool:
+        """Valida a credencial AI sem executar um modelo real."""
+        payload = {
+            "model": AUTH_PROBE_MODEL,
+            "messages": [{"role": "user", "content": "credential probe"}],
+        }
+        return await self._credential_reaches_target_validation(
+            CHAT_COMPLETIONS_PATH,
+            payload,
+            request_id="cesar-core-readiness-ai-credential-probe",
+        )
+
     async def search(
         self, payload: dict[str, Any], *, correlation_id: str
     ) -> OmniRouteResponse:
@@ -175,6 +187,41 @@ class OmniRouteClient:
         if response.status_code >= 500:
             self._raise_for_status(response)
         return False
+
+    async def search_credential_accepted(self) -> bool:
+        """Valida a credencial Search sem executar um provider real."""
+        payload = {
+            "query": "credential probe",
+            "provider": AUTH_PROBE_SEARCH_PROVIDER,
+            "max_results": 1,
+        }
+        return await self._credential_reaches_target_validation(
+            SEARCH_PATH,
+            payload,
+            request_id="cesar-core-readiness-search-credential-probe",
+        )
+
+    async def _credential_reaches_target_validation(
+        self, path: str, payload: dict[str, Any], *, request_id: str
+    ) -> bool:
+        """400 prova auth aceita e alvo inexistente rejeitado antes de consumo."""
+        headers = {
+            **bearer_header(self._config.read_api_key()),
+            REQUEST_ID_HEADER: request_id,
+        }
+        try:
+            response = await self._http.post(path, json=payload, headers=headers)
+        except httpx.TimeoutException as exc:
+            raise OmniRouteTimeoutError("OmniRoute credential probe timed out") from exc
+        except httpx.ConnectError as exc:
+            raise OmniRouteConnectionError(
+                "OmniRoute unreachable during credential probe"
+            ) from exc
+        if response.status_code in (401, 403):
+            return False
+        if response.status_code >= 500:
+            self._raise_for_status(response)
+        return response.status_code == 400
 
     async def request(
         self,

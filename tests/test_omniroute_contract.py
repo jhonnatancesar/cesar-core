@@ -29,7 +29,7 @@ Superfícies reais:
   G. readiness -- AI habilitada verifica health e auth real do chat.
   H. timeout -- timeout de socket real vira `AIUpstreamUnavailableError`.
   I. indisponibilidade -- conexão recusada real recebe a mesma normalização.
-  J. max tokens -- usage real acima do hard cap é rejeitado pelo adapter.
+  J. max tokens -- caps reais no target certificado; conteúdo inválido é rejeitado.
   K. Search adapter -- captura payload/auth reais e normaliza resultado + usage.
   L. Search endpoint -- rota, policy, manager e adapter contra OmniRoute real.
   M. Search error -- provider inválido vira erro de domínio normalizado.
@@ -71,6 +71,7 @@ from cesar_core.search.policy import SearchProviderTarget
 from cesar_core.search.providers.omniroute import OmniRouteSearchProvider
 
 DEFAULT_KEY_FILE = Path(r"C:\cesar-core\.secrets\omniroute_api_key")
+CORE_TEST_CREDENTIAL = "gg-oferta-contract-credential"
 REAL_FREE_MODEL = "auto/best-free"
 REAL_MAX_TOKENS_MODEL = "oc/mimo-v2.5-free"
 
@@ -95,6 +96,7 @@ class CapturingTransport(httpx.AsyncBaseTransport):
     def __init__(self) -> None:
         self.inner = httpx.AsyncHTTPTransport()
         self.chat_payloads: list[dict] = []
+        self.chat_responses: list[dict] = []
         self.search_payloads: list[dict] = []
         self.search_authenticated: list[bool] = []
 
@@ -106,7 +108,11 @@ class CapturingTransport(httpx.AsyncBaseTransport):
             self.search_authenticated.append(
                 request.headers.get("Authorization", "").startswith("Bearer ")
             )
-        return await self.inner.handle_async_request(request)
+        response = await self.inner.handle_async_request(request)
+        if request.url.path == "/v1/chat/completions":
+            await response.aread()
+            self.chat_responses.append(response.json())
+        return response
 
     async def aclose(self) -> None:
         await self.inner.aclose()
@@ -201,6 +207,7 @@ async def test_search_adapter_normalizes_real_omniroute_response_and_usage() -> 
 
 async def test_search_endpoint_runs_real_policy_manager_adapter_and_gateway(
     monkeypatch,
+    tmp_path,
 ) -> None:
     """Prova config -> rota -> policy -> manager -> adapter -> OmniRoute."""
     monkeypatch.setenv("CESAR_CORE_SEARCH_ENABLED", "true")
@@ -208,12 +215,17 @@ async def test_search_endpoint_runs_real_policy_manager_adapter_and_gateway(
     monkeypatch.setenv("CESAR_CORE_SEARCH_TECHNICAL_DOCUMENTATION_PROVIDER", "context7")
     monkeypatch.setenv("CESAR_CORE_SEARCH_PROVIDER_IS_PAID", "false")
     monkeypatch.setenv("CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT", "3")
-    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(DEFAULT_KEY_FILE))
+    monkeypatch.setenv(
+        "CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE", str(DEFAULT_KEY_FILE)
+    )
+    core_key = tmp_path / "ggoferta-core-client"
+    core_key.write_text(CORE_TEST_CREDENTIAL, encoding="utf-8")
+    monkeypatch.setenv("CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE", str(core_key))
 
     response = TestClient(app).post(
         "/v1/search",
         headers={
-            "X-Application-Id": "gg_oferta",
+            "Authorization": f"Bearer {CORE_TEST_CREDENTIAL}",
             "X-Service": "contract_test",
             "X-Purpose": "technical_documentation",
             "X-Correlation-Id": "contract-search-endpoint-correlation",
@@ -348,7 +360,9 @@ async def test_ai_adapter_normalizes_real_omniroute_client_error() -> None:
     await client.aclose()
 
 
-async def test_ai_generate_endpoint_normalizes_real_omniroute_completion() -> None:
+async def test_ai_generate_endpoint_normalizes_real_omniroute_completion(
+    monkeypatch, tmp_path
+) -> None:
     """Prova rota -> contexto -> policy -> manager -> adapter -> OmniRoute."""
     target = AIModelTarget(
         REAL_FREE_MODEL,
@@ -370,11 +384,15 @@ async def test_ai_generate_endpoint_normalizes_real_omniroute_completion() -> No
             yield AIManager(OmniRouteAIProvider(omniroute_client), policy)
 
     app.dependency_overrides[get_ai_manager] = real_manager
+    core_key = tmp_path / "ggoferta-core-client"
+    core_key.write_text(CORE_TEST_CREDENTIAL, encoding="utf-8")
+    monkeypatch.setenv("CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE", str(core_key))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE", str(DEFAULT_KEY_FILE))
     try:
         response = TestClient(app).post(
             "/v1/ai/generate",
             headers={
-                "X-Application-Id": "gg_oferta",
+                "Authorization": f"Bearer {CORE_TEST_CREDENTIAL}",
                 "X-Service": "contract_test",
                 "X-Purpose": "contract_ai_validation",
                 "X-Correlation-Id": "contract-ai-success-correlation",
@@ -390,7 +408,7 @@ async def test_ai_generate_endpoint_normalizes_real_omniroute_completion() -> No
         limit_response = TestClient(app).post(
             "/v1/ai/generate",
             headers={
-                "X-Application-Id": "gg_oferta",
+                "Authorization": f"Bearer {CORE_TEST_CREDENTIAL}",
                 "X-Service": "contract_test",
                 "X-Purpose": "contract_ai_validation",
                 "X-Correlation-Id": "contract-ai-limit-correlation",
@@ -422,13 +440,26 @@ async def test_ai_generate_endpoint_normalizes_real_omniroute_completion() -> No
     assert limit_response.json()["error"]["code"] == "ai_policy_denied"
 
 
-async def test_ai_adapter_rejects_real_provider_that_violates_max_tokens() -> None:
-    """O alvo local ignora o cap; o adapter deve falhar fechado, não devolver 200."""
+async def test_ai_adapter_real_small_cap_and_response_validation() -> None:
+    """Caps pequenos certificam limite, não conclusão textual probabilística."""
+    for cap in (8, 128):
+        await _assert_real_cap_and_response_validation(cap)
+
+
+async def _assert_real_cap_and_response_validation(cap: int) -> None:
+    """Cap certificado, sem presumir que um alias dinâmico viola o limite.
+
+    Reasoning pode esgotar o cap sem conteúdo textual: isso não vira sucesso.
+    Violação deliberada de usage é coberta nos testes unitários do adapter,
+    não fabricada nem pressuposta neste transporte real.
+    """
+    transport = CapturingTransport()
     client = OmniRouteClient(
         OmniRouteConfig(
             api_key_file=DEFAULT_KEY_FILE,
             timeout_seconds=90,
-        )
+        ),
+        transport=transport,
     )
     provider = OmniRouteAIProvider(client)
     request = AIRequest(
@@ -444,64 +475,160 @@ async def test_ai_adapter_rejects_real_provider_that_violates_max_tokens() -> No
             cost_policy=CostPolicy.FREE_ONLY,
         ),
         prompt="Reply with exactly: CESAR_CORE_MAX_TOKENS_PROBE",
-        max_tokens=8,
+        max_tokens=cap,
     )
+    response = None
+    error = None
     try:
-        with pytest.raises(AIUpstreamResponseError) as exc_info:
-            await provider.complete(request, target=AIModelTarget(REAL_FREE_MODEL))
-        assert "exceeded" in str(exc_info.value)
-        assert exc_info.value.upstream_request_id
-    finally:
-        await client.aclose()
-
-
-async def test_ai_adapter_real_upstream_enforces_max_tokens() -> None:
-    """Prova payload na rede e cap real em um modelo fixo que o suporta."""
-    transport = CapturingTransport()
-    client = OmniRouteClient(
-        OmniRouteConfig(api_key_file=DEFAULT_KEY_FILE, timeout_seconds=90),
-        transport=transport,
-    )
-    provider = OmniRouteAIProvider(client)
-    request = AIRequest(
-        context=ApplicationContext(
-            application_id=ApplicationId.GG_OFERTA,
-            service="contract_test",
-            purpose=Purpose(value="max_tokens_enforcement"),
-            request_id="contract-ai-max-enforced-request",
-            correlation_id="contract-ai-max-enforced-correlation",
-        ),
-        requirements=Requirements(
-            service_class=ServiceClass.ECONOMY,
-            cost_policy=CostPolicy.FREE_ONLY,
-        ),
-        prompt="Reply with exactly: CAPPED",
-        max_tokens=128,
-    )
-    try:
-        response = await provider.complete(
-            request,
-            target=AIModelTarget(
-                REAL_MAX_TOKENS_MODEL,
-                paid=False,
-                enforces_max_tokens=True,
-            ),
-        )
+        try:
+            response = await provider.complete(
+                request,
+                target=AIModelTarget(
+                    REAL_MAX_TOKENS_MODEL, paid=False, enforces_max_tokens=True
+                ),
+            )
+        except AIUpstreamResponseError as exc:
+            error = exc
     finally:
         await client.aclose()
 
     assert transport.chat_payloads == [
         {
             "model": REAL_MAX_TOKENS_MODEL,
-            "messages": [{"role": "user", "content": "Reply with exactly: CAPPED"}],
-            "max_tokens": 128,
+            "messages": [{"role": "user", "content": request.prompt}],
+            "max_tokens": cap,
         }
     ]
-    assert response.model == "mimo-v2.5-free"
-    assert response.content == "CAPPED"
-    assert response.usage is not None
-    assert response.usage.completion_tokens is not None
-    assert response.usage.completion_tokens <= 128
+    assert len(transport.chat_responses) == 1
+    raw = transport.chat_responses[0]
+    assert raw["model"] == "mimo-v2.5-free"
+    assert 0 < raw["usage"]["completion_tokens"] <= cap
+    content = raw["choices"][0]["message"]["content"]
+    if isinstance(content, str):
+        assert error is None
+        assert response is not None
+        assert response.content == content
+        assert response.usage.completion_tokens == raw["usage"]["completion_tokens"]
+    else:
+        assert response is None
+        assert error is not None
+        assert "non-text chat content" in str(error)
+        assert error.upstream_request_id
+    print(
+        json.dumps(
+            {
+                "payload": transport.chat_payloads[0],
+                "model": raw["model"],
+                "usage": raw["usage"],
+                "finish_reason": raw["choices"][0]["finish_reason"],
+                "text_content": isinstance(content, str),
+                "adapter_rejected": error is not None,
+            }
+        )
+    )
+
+
+async def test_ai_real_text_completion_with_comfortable_cap(
+    monkeypatch, tmp_path
+) -> None:
+    """Positivo textual separado: 512 dá margem sobre o cap 128 esgotado.
+
+    Mantém limite explícito e baixo, sem retries ou alteração do target.
+    """
+    transport = CapturingTransport()
+    client = OmniRouteClient(
+        OmniRouteConfig(api_key_file=DEFAULT_KEY_FILE, timeout_seconds=90),
+        transport=transport,
+    )
+    target = AIModelTarget(
+        REAL_MAX_TOKENS_MODEL,
+        paid=False,
+        enforces_max_tokens=True,
+        max_tokens_limit=512,
+    )
+    policy = AIPolicy(
+        {(ApplicationId.GG_OFERTA, "max_tokens_text", ServiceClass.ECONOMY): target}
+    )
+
+    async def real_manager():
+        async with client:
+            yield AIManager(OmniRouteAIProvider(client), policy)
+
+    core_key = tmp_path / "ggoferta-core-client"
+    core_key.write_text(CORE_TEST_CREDENTIAL, encoding="utf-8")
+    monkeypatch.setenv("CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE", str(core_key))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE", str(DEFAULT_KEY_FILE))
+    app.dependency_overrides[get_ai_manager] = real_manager
+    try:
+        response = TestClient(app).post(
+            "/v1/ai/generate",
+            headers={
+                "Authorization": f"Bearer {CORE_TEST_CREDENTIAL}",
+                "X-Service": "contract_test",
+                "X-Purpose": "max_tokens_text",
+                "X-Correlation-Id": "contract-ai-text-correlation",
+            },
+            json={
+                "requirements": {
+                    "service_class": "economy",
+                    "cost_policy": "free_only",
+                },
+                "prompt": "Reply with exactly: CAPPED",
+                "max_tokens": 512,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_ai_manager, None)
+        for raw in transport.chat_responses:
+            print(
+                json.dumps(
+                    {
+                        "payload": transport.chat_payloads[0],
+                        "model": raw.get("model"),
+                        "usage": raw.get("usage"),
+                        "finish_reason": raw["choices"][0].get("finish_reason"),
+                        "text_content": isinstance(
+                            raw["choices"][0]["message"].get("content"), str
+                        ),
+                    }
+                )
+            )
+
+    assert transport.chat_payloads == [
+        {
+            "model": REAL_MAX_TOKENS_MODEL,
+            "messages": [{"role": "user", "content": "Reply with exactly: CAPPED"}],
+            "max_tokens": 512,
+        }
+    ]
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["model"] == "mimo-v2.5-free"
+    assert isinstance(body["content"], str) and body["content"].strip()
+    assert (
+        body["content"]
+        == transport.chat_responses[0]["choices"][0]["message"]["content"]
+    )
+    assert body["provider_gateway"] == "omniroute"
+    assert body["request_id"] and body["upstream_request_id"]
+    assert body["correlation_id"] == "contract-ai-text-correlation"
+    assert body["usage"]["prompt_tokens"] > 0
+    assert 0 < body["usage"]["completion_tokens"] <= 512
+    assert (
+        body["usage"]["completion_tokens"]
+        == transport.chat_responses[0]["usage"]["completion_tokens"]
+    )
+    assert body["usage"]["total_tokens"] >= body["usage"]["completion_tokens"]
+    print(
+        json.dumps(
+            {
+                "payload": transport.chat_payloads[0],
+                "model": body["model"],
+                "content": body["content"],
+                "completion_tokens": body["usage"]["completion_tokens"],
+            }
+        )
+    )
 
 
 async def test_ai_adapter_normalizes_real_authentication_error() -> None:
@@ -534,10 +661,13 @@ async def test_ai_adapter_normalizes_real_authentication_error() -> None:
         bad_key_file.unlink(missing_ok=True)
 
 
-def test_readiness_and_capabilities_with_real_enabled_ai(monkeypatch) -> None:
+def test_readiness_and_capabilities_with_real_enabled_ai(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("CESAR_CORE_AI_ENABLED", "true")
     monkeypatch.setenv("CESAR_CORE_AI_DEFAULT_MODEL", REAL_FREE_MODEL)
-    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(DEFAULT_KEY_FILE))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE", str(DEFAULT_KEY_FILE))
+    core_key = tmp_path / "ggoferta-core-client"
+    core_key.write_text(CORE_TEST_CREDENTIAL, encoding="utf-8")
+    monkeypatch.setenv("CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE", str(core_key))
 
     client = TestClient(app)
     readiness = client.get("/ready")

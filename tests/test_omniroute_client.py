@@ -212,6 +212,46 @@ async def test_chat_authentication_probe_rejects_anonymous_fallback(
     await client.aclose()
 
 
+@pytest.mark.parametrize(
+    ("method_name", "path"),
+    [
+        ("chat_credential_accepted", CHAT_COMPLETIONS_PATH),
+        ("search_credential_accepted", SEARCH_PATH),
+    ],
+)
+async def test_configured_credential_probe_reaches_target_validation(
+    tmp_path: Path, method_name: str, path: str
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == path
+        assert request.headers["Authorization"] == "Bearer sk-test-key"
+        return httpx.Response(400, text="unknown target")
+
+    client = _client(tmp_path, handler)
+    assert await getattr(client, method_name)() is True
+    await client.aclose()
+
+
+@pytest.mark.parametrize(
+    "method_name", ["chat_credential_accepted", "search_credential_accepted"]
+)
+async def test_configured_credential_probe_rejects_bad_key(
+    tmp_path: Path, method_name: str
+) -> None:
+    client = _client(tmp_path, lambda request: httpx.Response(401, text="bad key"))
+    assert await getattr(client, method_name)() is False
+    await client.aclose()
+
+
+async def test_configured_credential_probe_raises_on_upstream_failure(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path, lambda request: httpx.Response(500, text="boom"))
+    with pytest.raises(OmniRouteServerError):
+        await client.chat_credential_accepted()
+    await client.aclose()
+
+
 async def test_search_posts_to_the_search_endpoint(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"

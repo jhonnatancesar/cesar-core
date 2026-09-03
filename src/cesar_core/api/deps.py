@@ -4,18 +4,15 @@
 de ``get_application_context``: contexto confiável nos headers/dependencies e
 payload funcional no body.
 
-``X-Application-Id`` NÃO é autoridade de segurança em produção -- é um
-valor arbitrário que qualquer chamador pode declarar. Ele existe aqui
-apenas como conveniência de teste/dev enquanto ``security/`` é uma fronteira
-reservada, sem autenticação implementada. Na TASK-118E,
-``application_id`` passa a vir da identidade autenticada resolvida por
-``security/`` -- este header deixa de ser a fonte, sem exigir mudança
-no contrato de ``ApplicationContext`` (ver ADR 0010).
+Na TASK-118E, ``application_id`` vem exclusivamente da credencial Bearer
+resolvida por ``security/``. ``service`` e ``purpose`` continuam como metadata
+declarada, validada pelas policies; nenhum header de application ID é usado.
 """
 
 from collections.abc import AsyncIterator
 
-from fastapi import Header, Request
+from fastapi import Depends, Header, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from cesar_core.ai.config import AIConfig
 from cesar_core.ai.contracts import AIRequest, AIResponse
@@ -45,8 +42,15 @@ from cesar_core.search.policy import (
     SearchProviderTarget,
 )
 from cesar_core.search.providers.omniroute import OmniRouteSearchProvider
+from cesar_core.security.authentication import ApplicationAuthenticator
+from cesar_core.security.authorization import authorize_capability
+from cesar_core.security.config import SecurityConfig
+from cesar_core.security.quota import QuotaLimiter
 from cesar_core.telemetry.correlation import CORRELATION_HEADER, resolve_correlation_id
 from cesar_core.telemetry.request_id import new_request_id
+
+QUOTA_LIMITER = QuotaLimiter()
+APPLICATION_BEARER = HTTPBearer(auto_error=False, scheme_name="ApplicationBearer")
 
 
 def get_correlation_id(
@@ -57,38 +61,85 @@ def get_correlation_id(
 
 
 def get_application_context(
-    x_application_id: ApplicationId = Header(alias="X-Application-Id"),
-    x_service: str = Header(alias="X-Service"),
-    x_purpose: str = Header(alias="X-Purpose"),
-    x_correlation_id: str | None = Header(default=None, alias=CORRELATION_HEADER),
+    application_id: ApplicationId,
+    service: str,
+    purpose: str,
+    correlation_id: str | None,
 ) -> ApplicationContext:
-    """Monta o contexto da aplicação chamadora a partir dos headers da requisição.
+    """Monta contexto interno com uma identidade já resolvida.
 
     ``request_id`` é sempre gerado aqui (nunca lido de header): é a
     identidade desta requisição individual, distinta do correlation ID
     que se propaga pela cadeia inteira.
     """
     return ApplicationContext(
-        application_id=x_application_id,
-        service=x_service,
-        purpose=Purpose(value=x_purpose),
+        application_id=application_id,
+        service=service,
+        purpose=Purpose(value=purpose),
         request_id=new_request_id(),
-        correlation_id=resolve_correlation_id(x_correlation_id),
+        correlation_id=resolve_correlation_id(correlation_id),
     )
 
 
-def get_request_application_context(
+def get_authenticated_application(
     request: Request,
-    x_application_id: ApplicationId = Header(alias="X-Application-Id"),
+    credentials: HTTPAuthorizationCredentials | None = Depends(APPLICATION_BEARER),
+) -> ApplicationId:
+    """Autentica Bearer e registra a identidade confiável no request state."""
+    authorization = None
+    if credentials is not None:
+        authorization = f"{credentials.scheme} {credentials.credentials}"
+    application_id = ApplicationAuthenticator(SecurityConfig()).authenticate(
+        authorization
+    )
+    request.state.application_id = application_id
+    return application_id
+
+
+def _authorized_context(
+    request: Request,
+    application_id: ApplicationId,
+    service: str,
+    purpose: str,
+    capability: str,
+) -> ApplicationContext:
+    authorize_capability(application_id, capability)
+    config = SecurityConfig()
+    limit = (
+        config.ai_requests_per_minute
+        if capability == "ai"
+        else config.search_requests_per_minute
+    )
+    QUOTA_LIMITER.check(application_id, capability, limit)
+    context = ApplicationContext(
+        application_id=application_id,
+        service=service,
+        purpose=Purpose(value=purpose),
+        request_id=request.state.request_id,
+        correlation_id=request.state.correlation_id,
+    )
+    request.state.service = context.service
+    request.state.purpose = context.purpose.value
+    return context
+
+
+def get_ai_application_context(
+    request: Request,
+    application_id: ApplicationId = Depends(get_authenticated_application),
     x_service: str = Header(alias="X-Service"),
     x_purpose: str = Header(alias="X-Purpose"),
 ) -> ApplicationContext:
-    """Monta o contexto usando o correlation ID já resolvido pelo middleware."""
-    return get_application_context(
-        x_application_id,
-        x_service,
-        x_purpose,
-        request.state.correlation_id,
+    return _authorized_context(request, application_id, x_service, x_purpose, "ai")
+
+
+def get_search_application_context(
+    request: Request,
+    application_id: ApplicationId = Depends(get_authenticated_application),
+    x_service: str = Header(alias="X-Service"),
+    x_purpose: str = Header(alias="X-Purpose"),
+) -> ApplicationContext:
+    return _authorized_context(
+        request, application_id, x_service, x_purpose, "search"
     )
 
 
@@ -114,7 +165,7 @@ async def get_ai_manager() -> AsyncIterator[AIManager]:
             )
 
     try:
-        omniroute_config = OmniRouteConfig()
+        omniroute_config = OmniRouteConfig().for_capability("ai")
     except ValueError:
         yield AIManager(
             _UnavailableAIProvider(
@@ -182,7 +233,7 @@ async def get_search_manager() -> AsyncIterator[SearchManager]:
             )
 
     try:
-        omniroute_config = OmniRouteConfig()
+        omniroute_config = OmniRouteConfig().for_capability("search")
     except ValueError:
         yield SearchManager(
             _UnavailableSearchProvider(

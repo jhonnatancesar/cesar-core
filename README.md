@@ -8,7 +8,8 @@ Oferta e contém o transporte HTTP real de baixo nível para o OmniRoute.
 
 O projeto concluiu a fundação (**TASK-118A**), o transporte OmniRoute
 (**TASK-118B**) e as primeiras fatias dos gateways centrais de AI
-(**TASK-118C**) e Web Search (**TASK-118D**). Estão disponíveis:
+(**TASK-118C**), Web Search (**TASK-118D**) e segurança/observabilidade
+(**TASK-118E**). Estão disponíveis:
 
 - registry de aplicações e `ApplicationContext`;
 - contratos internos e boundaries separados de AI e Search;
@@ -22,9 +23,12 @@ O projeto concluiu a fundação (**TASK-118A**), o transporte OmniRoute
 - policy Search por application/purpose/service class, `FREE_ONLY` e limite;
 - `SearchManager`, adapter OmniRoute e `POST /v1/search`;
 - resposta Search normalizada com resultados, usage, provider, cache e tracing.
+- autenticação Bearer aplicação→Core, registry com scopes e quota pré-upstream;
+- credenciais Core→OmniRoute independentes para AI e Search;
+- métricas Prometheus em `/metrics` e tracing estruturado sem payload/segredos.
 
-Ainda não estão implementados a autenticação das aplicações consumidoras nem
-o deployment de produção. Cada gateway aparece como `not_configured` enquanto
+Ainda não estão implementadas as integrações do GG Oferta (118F/118G) nem o
+deployment de produção. Cada gateway aparece como `not_configured` enquanto
 sua flag estiver falsa ou faltar seu alvo padrão; OmniRoute fica `available`
 quando AI ou Search estiver configurado.
 
@@ -57,6 +61,13 @@ e `POST /v1/ai/generate` (ADR 0014).
 usage/tracing, semântica explícita de fallback e `POST /v1/search` (ADR 0015).
 Não migra o Market Research do GG Oferta; essa integração pertence à 118G.
 
+**TASK-118E** (Security, Registry & Observability): `gg_oferta` autenticado por
+credencial Bearer em arquivo e autorizado para AI/Search; `claudiao` continua
+`RESERVED`, sem credential e sem scopes. Quotas por aplicação/capability são
+aplicadas antes do manager/upstream. Métricas e logs estruturados agregam
+application/service/purpose, IDs, provider/model, latência, fallback e usage
+sem registrar prompts, queries ou segredos (ADR 0016).
+
 ## Estrutura
 
 ```text
@@ -67,8 +78,8 @@ src/cesar_core/
   search/         contrato, policy, manager e adapter OmniRoute de Search
   omniroute/      client HTTP de baixo nível (health, chat completions, search)
   policy/         service_class, cost_policy, requirements
-  security/       fronteira reservada para autenticação futura
-  telemetry/      correlation ID (propagado) e request ID (gerado por requisição)
+  security/       autenticação, credentials, autorização e quotas
+  telemetry/      IDs, tracing estruturado e métricas Prometheus
   health/         lógica de health/readiness/capabilities
   config/         settings do processo
 ```
@@ -98,16 +109,19 @@ Testes de contrato reais contra o OmniRoute (`pytest -m contract`) só
 rodam quando `.secrets/omniroute_api_key` existe; sem isso, são pulados
 automaticamente -- ver ADR 0011.
 
-A configuração de exemplo está em `.env.example`. A chave do OmniRoute não
-deve ser colocada no `.env`: `CESAR_CORE_OMNIROUTE_API_KEY_FILE` aponta para
-um arquivo local fora do Git.
+A configuração de exemplo está em `.env.example`. Nenhuma chave deve ser
+colocada no `.env`: os campos `*_FILE` apontam para arquivos locais fora do
+Git. A chamada aos gateways exige `Authorization: Bearer <credential>`; o Core
+deriva `application_id` dessa credencial e ignora qualquer tentativa de
+declará-lo no payload ou em `X-Application-Id`.
 
 Para habilitar o endpoint AI, configure ao menos:
 
 ```env
 CESAR_CORE_AI_ENABLED=true
 CESAR_CORE_AI_DEFAULT_MODEL=<modelo disponível no OmniRoute>
-CESAR_CORE_OMNIROUTE_API_KEY_FILE=.secrets/omniroute_api_key
+CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE=.secrets/ggoferta-ai
+CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE=.secrets/ggoferta-core-client
 ```
 
 O modelo não é aceito no body público: ele é escolhido pela policy interna.
@@ -120,7 +134,8 @@ Para habilitar o endpoint Search, configure ao menos:
 CESAR_CORE_SEARCH_ENABLED=true
 CESAR_CORE_SEARCH_DEFAULT_PROVIDER=
 CESAR_CORE_SEARCH_TECHNICAL_DOCUMENTATION_PROVIDER=context7
-CESAR_CORE_OMNIROUTE_API_KEY_FILE=.secrets/omniroute_api_key
+CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE=.secrets/ggoferta-search
+CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE=.secrets/ggoferta-core-client
 ```
 
 O provider não é aceito no body público. `ECONOMY_PROVIDER`,
@@ -138,6 +153,14 @@ SearXNG e Ollama Search exigem configuração externa ainda inexistente.
 `search_technical_documentation`. O status agregado `search` fica disponível
 quando ao menos um target Search está configurado, sem afirmar que todos os
 purposes possuem cobertura.
+
+`/v1/capabilities` também informa `application_registry`,
+`application_authentication` e `metrics`, sem listar credenciais nem expor o
+consumidor reservado. `/ready` degrada se AI/Search estiver habilitado sem uma
+credencial de aplicação legível ou sem a credencial OmniRoute específica da
+capability. `/metrics` usa o formato de exposição Prometheus e somente labels
+operacionais de baixa cardinalidade. A quota atual é uma fixed window por
+processo; uma implantação com múltiplas réplicas exigirá backend distribuído.
 
 Para subir a API localmente:
 

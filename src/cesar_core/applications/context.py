@@ -33,10 +33,9 @@ class ApplicationContext(BaseModel):
     ``service`` é o serviço/processo chamador dentro da aplicação
     consumidora (ex.: ``collection_worker``, ``backend``, ``bot``).
 
-    Construída de forma confiável pelo próprio César Core -- em 118A a
-    partir de headers (``api/deps.py``), e futuramente a partir da
+    Construída de forma confiável pelo próprio César Core a partir da
     identidade autenticada (TASK-118E, ver ADR 0010) -- nunca a partir de
-    um campo arbitrário dentro do corpo de uma requisição HTTP pública.
+    um campo arbitrário dentro do corpo ou de um header de application ID.
     """
 
     application_id: ApplicationId

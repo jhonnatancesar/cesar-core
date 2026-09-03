@@ -66,15 +66,12 @@
         ],
         "summary": "Generate Ai",
         "operationId": "generate_ai_v1_ai_generate_post",
-        "parameters": [
+        "security": [
           {
-            "name": "X-Application-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/ApplicationId"
-            }
-          },
+            "ApplicationBearer": []
+          }
+        ],
+        "parameters": [
           {
             "name": "X-Service",
             "in": "header",
@@ -125,6 +122,26 @@
             },
             "description": "Forbidden"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
           "502": {
             "content": {
               "application/json": {
@@ -165,15 +182,12 @@
         ],
         "summary": "Search Web",
         "operationId": "search_web_v1_search_post",
-        "parameters": [
+        "security": [
           {
-            "name": "X-Application-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/ApplicationId"
-            }
-          },
+            "ApplicationBearer": []
+          }
+        ],
+        "parameters": [
           {
             "name": "X-Service",
             "in": "header",
@@ -223,6 +237,26 @@
               }
             },
             "description": "Forbidden"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           },
           "502": {
             "content": {
@@ -473,18 +507,21 @@
         "title": "AIUsage",
         "description": "Uso de tokens normalizado, quando informado pelo upstream."
       },
-      "ApplicationId": {
-        "type": "string",
-        "enum": [
-          "gg_oferta",
-          "claudiao"
-        ],
-        "title": "ApplicationId",
-        "description": "Aplicações conhecidas pelo registry do César Core."
-      },
       "CapabilitiesResponse": {
         "properties": {
           "core": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "available"
+          },
+          "application_registry": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "available"
+          },
+          "application_authentication": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "not_configured"
+          },
+          "metrics": {
             "$ref": "#/components/schemas/ServiceStatus",
             "default": "available"
           },
@@ -874,6 +911,50 @@
         "title": "SearchUsage",
         "description": "Uso normalizado da busca informado pelo gateway upstream."
       },
+      "SecurityErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Message"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Request Id"
+          },
+          "correlation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Correlation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id",
+          "correlation_id"
+        ],
+        "title": "SecurityErrorDetail"
+      },
+      "SecurityErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/SecurityErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "SecurityErrorResponse"
+      },
       "ServiceClass": {
         "type": "string",
         "enum": [
@@ -932,6 +1013,12 @@
           "type"
         ],
         "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "ApplicationBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

@@ -1,8 +1,9 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from cesar_core.ai.contracts import AIResponse
 from cesar_core.api.app import app
-from cesar_core.api.deps import get_ai_manager, get_search_manager
+from cesar_core.api.deps import QUOTA_LIMITER, get_ai_manager, get_search_manager
 from cesar_core.search.contracts import SearchResponse, SearchUsage
 from cesar_core.search.errors import (
     SearchCostPolicyDeniedError,
@@ -10,8 +11,32 @@ from cesar_core.search.errors import (
     SearchUpstreamUnavailableError,
 )
 from cesar_core.telemetry.correlation import CORRELATION_HEADER
+from cesar_core.telemetry.metrics import METRICS
 
 client = TestClient(app)
+TEST_CREDENTIAL = "gg-oferta-test-credential"
+
+
+@pytest.fixture(autouse=True)
+def configure_application_authentication(monkeypatch, tmp_path) -> None:
+    credential_file = tmp_path / "ggoferta-core-client"
+    credential_file.write_text(TEST_CREDENTIAL, encoding="utf-8")
+    monkeypatch.setenv(
+        "CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE", str(credential_file)
+    )
+    QUOTA_LIMITER.reset()
+    METRICS.reset()
+
+
+def _identity_headers(*, purpose: str, correlation_id: str | None = None) -> dict:
+    headers = {
+        "Authorization": f"Bearer {TEST_CREDENTIAL}",
+        "X-Service": "backend",
+        "X-Purpose": purpose,
+    }
+    if correlation_id is not None:
+        headers[CORRELATION_HEADER] = correlation_id
+    return headers
 
 
 def test_health_endpoint_reports_process_alive() -> None:
@@ -31,6 +56,9 @@ def test_capabilities_endpoint_is_honest_about_unconfigured_services() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "core": "available",
+        "application_registry": "available",
+        "application_authentication": "available",
+        "metrics": "available",
         "ai": "not_configured",
         "search": "not_configured",
         "search_general_web": "not_configured",
@@ -50,7 +78,11 @@ def test_response_reuses_incoming_correlation_id_header() -> None:
 
 
 class StubAIManager:
+    def __init__(self) -> None:
+        self.last_request = None
+
     async def generate(self, request):
+        self.last_request = request
         return AIResponse(
             request_id=request.context.request_id,
             correlation_id=request.context.correlation_id,
@@ -62,16 +94,12 @@ class StubAIManager:
 
 
 def test_ai_generate_builds_trusted_context_outside_the_body() -> None:
-    app.dependency_overrides[get_ai_manager] = lambda: StubAIManager()
+    manager = StubAIManager()
+    app.dependency_overrides[get_ai_manager] = lambda: manager
     try:
         response = client.post(
             "/v1/ai/generate",
-            headers={
-                "X-Application-Id": "gg_oferta",
-                "X-Service": "backend",
-                "X-Purpose": "chat",
-                CORRELATION_HEADER: "corr-fixed",
-            },
+            headers=_identity_headers(purpose="chat", correlation_id="corr-fixed"),
             json={
                 "requirements": {
                     "service_class": "standard",
@@ -87,9 +115,33 @@ def test_ai_generate_builds_trusted_context_outside_the_body() -> None:
     assert response.json()["content"] == "pong"
     assert response.json()["correlation_id"] == "corr-fixed"
     assert response.headers[CORRELATION_HEADER] == "corr-fixed"
+    assert manager.last_request.context.application_id.value == "gg_oferta"
 
 
-def test_ai_generate_requires_identity_headers() -> None:
+def test_spoofed_application_header_does_not_change_authenticated_identity() -> None:
+    manager = StubAIManager()
+    app.dependency_overrides[get_ai_manager] = lambda: manager
+    headers = _identity_headers(purpose="chat")
+    headers["X-Application-Id"] = "claudiao"
+    try:
+        response = client.post(
+            "/v1/ai/generate",
+            headers=headers,
+            json={
+                "requirements": {
+                    "service_class": "standard",
+                    "cost_policy": "free_preferred",
+                },
+                "prompt": "ping",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert manager.last_request.context.application_id.value == "gg_oferta"
+
+
+def test_ai_generate_requires_a_bearer_credential() -> None:
     app.dependency_overrides[get_ai_manager] = lambda: StubAIManager()
     try:
         response = client.post(
@@ -104,7 +156,46 @@ def test_ai_generate_requires_identity_headers() -> None:
         )
     finally:
         app.dependency_overrides.clear()
-    assert response.status_code == 422
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_credential"
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_invalid_application_credential_is_rejected() -> None:
+    response = client.post(
+        "/v1/ai/generate",
+        headers={
+            "Authorization": "Bearer wrong",
+            "X-Service": "backend",
+            "X-Purpose": "chat",
+        },
+        json={
+            "requirements": {
+                "service_class": "standard",
+                "cost_policy": "free_preferred",
+            },
+            "prompt": "ping",
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_credential"
+
+
+def test_authentication_not_configured_is_fail_closed(monkeypatch) -> None:
+    monkeypatch.delenv("CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE")
+    response = client.post(
+        "/v1/ai/generate",
+        headers=_identity_headers(purpose="chat"),
+        json={
+            "requirements": {
+                "service_class": "standard",
+                "cost_policy": "free_preferred",
+            },
+            "prompt": "ping",
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "authentication_not_configured"
 
 
 def test_ai_generate_returns_normalized_error_when_gateway_is_disabled(
@@ -113,12 +204,7 @@ def test_ai_generate_returns_normalized_error_when_gateway_is_disabled(
     monkeypatch.setenv("CESAR_CORE_AI_ENABLED", "false")
     response = client.post(
         "/v1/ai/generate",
-        headers={
-            "X-Application-Id": "gg_oferta",
-            "X-Service": "backend",
-            "X-Purpose": "chat",
-            CORRELATION_HEADER: "corr-disabled",
-        },
+        headers=_identity_headers(purpose="chat", correlation_id="corr-disabled"),
         json={
             "requirements": {
                 "service_class": "standard",
@@ -154,12 +240,9 @@ def _search_request(manager) -> object:
     try:
         return client.post(
             "/v1/search",
-            headers={
-                "X-Application-Id": "gg_oferta",
-                "X-Service": "backend",
-                "X-Purpose": "market_research",
-                CORRELATION_HEADER: "corr-search",
-            },
+            headers=_identity_headers(
+                purpose="market_research", correlation_id="corr-search"
+            ),
             json={
                 "requirements": {
                     "service_class": "economy",
@@ -181,7 +264,7 @@ def test_search_builds_context_and_returns_normalized_response() -> None:
     assert response.headers[CORRELATION_HEADER] == "corr-search"
 
 
-def test_search_requires_identity_headers() -> None:
+def test_search_requires_a_bearer_credential() -> None:
     response = client.post(
         "/v1/search",
         json={
@@ -192,19 +275,16 @@ def test_search_requires_identity_headers() -> None:
             "query": "x",
         },
     )
-    assert response.status_code == 422
+    assert response.status_code == 401
 
 
 def test_search_returns_normalized_error_when_disabled(monkeypatch) -> None:
     monkeypatch.setenv("CESAR_CORE_SEARCH_ENABLED", "false")
     result = client.post(
         "/v1/search",
-        headers={
-            "X-Application-Id": "gg_oferta",
-            "X-Service": "backend",
-            "X-Purpose": "market_research",
-            CORRELATION_HEADER: "corr-disabled-search",
-        },
+        headers=_identity_headers(
+            purpose="market_research", correlation_id="corr-disabled-search"
+        ),
         json={
             "requirements": {
                 "service_class": "economy",
@@ -225,15 +305,11 @@ def test_documentation_target_does_not_serve_a_general_search_purpose(
     monkeypatch.setenv("CESAR_CORE_SEARCH_ENABLED", "true")
     monkeypatch.delenv("CESAR_CORE_SEARCH_DEFAULT_PROVIDER", raising=False)
     monkeypatch.setenv("CESAR_CORE_SEARCH_TECHNICAL_DOCUMENTATION_PROVIDER", "context7")
-    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(key_file))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE", str(key_file))
 
     response = client.post(
         "/v1/search",
-        headers={
-            "X-Application-Id": "gg_oferta",
-            "X-Service": "backend",
-            "X-Purpose": "market_research",
-        },
+        headers=_identity_headers(purpose="market_research"),
         json={
             "requirements": {
                 "service_class": "economy",
@@ -260,3 +336,52 @@ def test_search_maps_policy_upstream_and_unavailable_errors() -> None:
         response = _search_request(StubSearchManager(error))
         assert response.status_code == status
         assert response.json()["error"]["code"] == code
+
+
+def test_quota_is_enforced_before_the_ai_manager(monkeypatch) -> None:
+    monkeypatch.setenv("CESAR_CORE_SECURITY_AI_REQUESTS_PER_MINUTE", "1")
+    manager = StubAIManager()
+    app.dependency_overrides[get_ai_manager] = lambda: manager
+    payload = {
+        "requirements": {
+            "service_class": "standard",
+            "cost_policy": "free_preferred",
+        },
+        "prompt": "ping",
+    }
+    try:
+        first = client.post(
+            "/v1/ai/generate", headers=_identity_headers(purpose="chat"), json=payload
+        )
+        second = client.post(
+            "/v1/ai/generate", headers=_identity_headers(purpose="chat"), json=payload
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["error"]["code"] == "quota_exceeded"
+    assert int(second.headers["Retry-After"]) >= 1
+
+
+def test_metrics_aggregate_authenticated_usage_without_credentials() -> None:
+    app.dependency_overrides[get_ai_manager] = lambda: StubAIManager()
+    try:
+        response = client.post(
+            "/v1/ai/generate",
+            headers=_identity_headers(purpose="chat"),
+            json={
+                "requirements": {
+                    "service_class": "standard",
+                    "cost_policy": "free_preferred",
+                },
+                "prompt": "ping",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    metrics = client.get("/metrics")
+    assert metrics.status_code == 200
+    assert 'cesar_core_ai_requests_total{application="gg_oferta"} 1' in metrics.text
+    assert TEST_CREDENTIAL not in metrics.text

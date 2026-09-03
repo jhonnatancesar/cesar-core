@@ -9,7 +9,7 @@ Duas camadas (ver ADR 0010): ``AIRequestPayload`` é o DTO HTTP público
 -- nunca carrega identidade do chamador, só o payload funcional e os
 requirements. ``AIRequest`` é a requisição interna de domínio: o César
 Core a constrói combinando o ``ApplicationContext`` confiável (resolvido
-por ``api/deps.py``, e futuramente por autenticação real na TASK-118E)
+por autenticação em ``api/deps.py``)
 com um ``AIRequestPayload`` já validado. ``POST /v1/ai/generate`` executa esse
 fluxo sem aceitar identidade no body.
 """

@@ -20,6 +20,12 @@ O OpenAPI atual publica somente:
 - `POST /v1/ai/generate`;
 - `POST /v1/search`.
 
+AI e Search usam o security scheme `ApplicationBearer`. `application_id` não
+é parâmetro nem campo do body: ele é derivado da credencial. Erros de auth e
+quota usam envelopes normalizados com request/correlation IDs. O endpoint
+operacional `GET /metrics` exporta Prometheus text e fica deliberadamente fora
+do OpenAPI de produto.
+
 Os DTOs públicos neutros de AI e Search fazem parte do OpenAPI. O
 `OmniRouteClient` é uma dependência de transporte e não expõe diretamente
 suas rotas upstream no OpenAPI do César Core.

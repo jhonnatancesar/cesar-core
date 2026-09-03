@@ -11,3 +11,5 @@ class Application(BaseModel):
     id: ApplicationId
     state: ApplicationState
     display_name: str
+    client_id: str
+    allowed_capabilities: frozenset[str] = frozenset()

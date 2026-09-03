@@ -8,6 +8,21 @@ from cesar_core.health.service import (
 )
 from cesar_core.omniroute.errors import OmniRouteConnectionError
 from cesar_core.search.config import SearchConfig
+from cesar_core.security.config import SecurityConfig
+
+
+def _security_config(tmp_path) -> SecurityConfig:
+    path = tmp_path / "ggoferta-core-client"
+    path.write_text("credential", encoding="utf-8")
+    return SecurityConfig(_env_file=None, gg_oferta_api_key_file=path)
+
+
+def _configure_security(monkeypatch, tmp_path) -> None:
+    config = _security_config(tmp_path)
+    monkeypatch.setenv(
+        "CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE",
+        str(config.gg_oferta_api_key_file),
+    )
 
 
 def test_get_health_reports_ok() -> None:
@@ -17,6 +32,9 @@ def test_get_health_reports_ok() -> None:
 def test_get_capabilities_is_honest_about_unconfigured_services() -> None:
     capabilities = get_capabilities()
     assert capabilities.core is ServiceStatus.AVAILABLE
+    assert capabilities.application_registry is ServiceStatus.AVAILABLE
+    assert capabilities.application_authentication is ServiceStatus.NOT_CONFIGURED
+    assert capabilities.metrics is ServiceStatus.AVAILABLE
     assert capabilities.ai is ServiceStatus.NOT_CONFIGURED
     assert capabilities.search is ServiceStatus.NOT_CONFIGURED
     assert capabilities.search_general_web is ServiceStatus.NOT_CONFIGURED
@@ -55,16 +73,30 @@ def test_ai_and_omniroute_capabilities_become_available_when_ai_is_configured() 
     assert capabilities.search_technical_documentation is ServiceStatus.NOT_CONFIGURED
 
 
-def test_readiness_requires_enabled_dependencies_to_be_confirmed() -> None:
+def test_readiness_requires_authentication_and_dependencies(tmp_path) -> None:
     config = AIConfig(_env_file=None, enabled=True, default_model="model-a")
+    security = _security_config(tmp_path)
     # Pass the configured capability through the environment-independent seam.
     capabilities = get_capabilities(ai_config=config)
     assert capabilities.ai is ServiceStatus.AVAILABLE
 
     assert (
-        get_readiness(ai_config=config, dependencies_ready=False).status == "degraded"
+        get_readiness(
+            ai_config=config,
+            security_config=security,
+            dependencies_ready=False,
+        ).status
+        == "degraded"
     )
-    assert get_readiness(ai_config=config, dependencies_ready=True).status == "ok"
+    assert get_readiness(ai_config=config, dependencies_ready=True).status == "degraded"
+    assert (
+        get_readiness(
+            ai_config=config,
+            security_config=security,
+            dependencies_ready=True,
+        ).status
+        == "ok"
+    )
 
 
 def test_search_capability_is_independent_and_enables_omniroute() -> None:
@@ -109,7 +141,8 @@ async def test_probe_readiness_checks_omniroute_when_ai_is_enabled(
 ) -> None:
     monkeypatch.setenv("CESAR_CORE_AI_ENABLED", "true")
     monkeypatch.setenv("CESAR_CORE_AI_DEFAULT_MODEL", "model-a")
-    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(tmp_path / "key"))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE", str(tmp_path / "key"))
+    _configure_security(monkeypatch, tmp_path)
 
     class HealthyClient:
         def __init__(self, config) -> None:
@@ -119,6 +152,9 @@ async def test_probe_readiness_checks_omniroute_when_ai_is_enabled(
             return None
 
         async def chat_authentication_enforced(self) -> bool:
+            return True
+
+        async def chat_credential_accepted(self) -> bool:
             return True
 
         async def aclose(self) -> None:
@@ -134,7 +170,8 @@ async def test_probe_readiness_degrades_when_chat_allows_anonymous_fallback(
 ) -> None:
     monkeypatch.setenv("CESAR_CORE_AI_ENABLED", "true")
     monkeypatch.setenv("CESAR_CORE_AI_DEFAULT_MODEL", "model-a")
-    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(tmp_path / "key"))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE", str(tmp_path / "key"))
+    _configure_security(monkeypatch, tmp_path)
 
     class AnonymousClient:
         def __init__(self, config) -> None:
@@ -158,7 +195,8 @@ async def test_probe_readiness_degrades_when_omniroute_is_down(
 ) -> None:
     monkeypatch.setenv("CESAR_CORE_AI_ENABLED", "true")
     monkeypatch.setenv("CESAR_CORE_AI_DEFAULT_MODEL", "model-a")
-    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(tmp_path / "key"))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE", str(tmp_path / "key"))
+    _configure_security(monkeypatch, tmp_path)
 
     class DownClient:
         def __init__(self, config) -> None:
@@ -180,7 +218,8 @@ async def test_probe_readiness_checks_search_auth_when_search_is_enabled(
     monkeypatch.setenv("CESAR_CORE_AI_ENABLED", "false")
     monkeypatch.setenv("CESAR_CORE_SEARCH_ENABLED", "true")
     monkeypatch.setenv("CESAR_CORE_SEARCH_DEFAULT_PROVIDER", "duckduckgo-free")
-    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(tmp_path / "key"))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE", str(tmp_path / "key"))
+    _configure_security(monkeypatch, tmp_path)
 
     class HealthyClient:
         def __init__(self, config) -> None:
@@ -190,6 +229,9 @@ async def test_probe_readiness_checks_search_auth_when_search_is_enabled(
             return None
 
         async def search_authentication_enforced(self) -> bool:
+            return True
+
+        async def search_credential_accepted(self) -> bool:
             return True
 
         async def aclose(self) -> None:
@@ -205,7 +247,8 @@ async def test_probe_readiness_degrades_when_search_auth_is_not_enforced(
     monkeypatch.setenv("CESAR_CORE_AI_ENABLED", "false")
     monkeypatch.setenv("CESAR_CORE_SEARCH_ENABLED", "true")
     monkeypatch.setenv("CESAR_CORE_SEARCH_DEFAULT_PROVIDER", "duckduckgo-free")
-    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_API_KEY_FILE", str(tmp_path / "key"))
+    monkeypatch.setenv("CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE", str(tmp_path / "key"))
+    _configure_security(monkeypatch, tmp_path)
 
     class AnonymousClient:
         def __init__(self, config) -> None:

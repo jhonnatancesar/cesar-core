@@ -14,10 +14,16 @@ def test_application_model_requires_known_state() -> None:
         id=ApplicationId.GG_OFERTA,
         state=ApplicationState.ACTIVE,
         display_name="GG Oferta",
+        client_id="ggoferta-core-client",
     )
     assert app.state is ApplicationState.ACTIVE
 
 
 def test_application_model_rejects_unknown_state() -> None:
     with pytest.raises(ValidationError):
-        Application(id=ApplicationId.GG_OFERTA, state="unknown", display_name="x")
+        Application(
+            id=ApplicationId.GG_OFERTA,
+            state="unknown",
+            display_name="x",
+            client_id="client",
+        )

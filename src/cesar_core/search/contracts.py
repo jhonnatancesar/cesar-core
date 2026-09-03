@@ -7,8 +7,8 @@ Duas camadas (ver ADR 0010): ``SearchRequestPayload`` é o DTO HTTP
 público -- nunca carrega identidade do chamador, só o payload funcional
 e os requirements. ``SearchRequest`` é a requisição interna de domínio:
 o César Core a constrói combinando o ``ApplicationContext`` confiável
-(resolvido por ``api/deps.py``, e futuramente por autenticação real na
-TASK-118E) com um ``SearchRequestPayload`` já validado.
+(resolvido por autenticação em ``api/deps.py``) com um
+``SearchRequestPayload`` já validado.
 """
 
 from pydantic import BaseModel, Field, field_validator

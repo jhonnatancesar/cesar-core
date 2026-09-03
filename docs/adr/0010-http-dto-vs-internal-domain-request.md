@@ -27,30 +27,20 @@ Duas camadas, uma única fonte de verdade para identidade:
   criada exclusivamente pelo próprio César Core, nunca deserializada
   diretamente do corpo de uma requisição HTTP.
 
-Fluxo definido, mas ainda sem uma rota pública de AI/Search que o execute:
+Fluxo implementado pelas rotas públicas de AI/Search:
 
 ```text
 HTTP (AIRequestPayload/SearchRequestPayload)
-  -> auth/dependencies (api/deps.py::get_application_context)
+  -> Bearer auth/dependencies (api/deps.py)
   -> ApplicationContext confiável
   -> AIRequest/SearchRequest (internal)
   -> manager/provider
 ```
 
-No estado atual, `security/` continua apenas como fronteira reservada e
-nenhuma autenticação real está implementada. `get_application_context`
-resolve `application_id` a
-partir do header `X-Application-Id`, o que é aceitável apenas para
-teste/dev: **não é autoridade de segurança em produção**, porque
-qualquer chamador pode declarar esse header livremente.
-
-## Fonte futura de application_id em PROD
-
-Na TASK-118E (autenticação real), `application_id` passa a vir da
-identidade autenticada resolvida por `security/`, não mais do header
-`X-Application-Id`. O contrato de `ApplicationContext`/`AIRequest`/
-`SearchRequest` já está pronto para essa troca: só a implementação de
-`get_application_context` muda, nenhum contrato precisa ser refeito.
+Desde a TASK-118E, `application_id` vem da credencial Bearer resolvida por
+`security/`, nunca do header `X-Application-Id`. O header não faz parte do
+OpenAPI e, se enviado, não altera a identidade autenticada. O contrato de
+`ApplicationContext`/`AIRequest`/`SearchRequest` não precisou ser refeito.
 
 `service`, `purpose` e `correlation_id` continuam sendo metadata
 declarada pelo chamador (não uma identidade de segurança), sujeitos a
@@ -59,7 +49,7 @@ especificamente precisa vir de algo que o chamador não pode forjar.
 
 ## Consequências
 
-Um endpoint futuro de AI/Search declara `AIRequestPayload`/
+Cada endpoint de AI/Search declara `AIRequestPayload`/
 `SearchRequestPayload` como corpo da requisição e `ApplicationContext`
 como dependency separada; o Core monta o `AIRequest`/`SearchRequest`
 interno combinando os dois antes de repassar a um manager/provider.

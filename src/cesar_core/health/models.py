@@ -54,6 +54,9 @@ class CapabilitiesResponse(BaseModel):
     """
 
     core: ServiceStatus = ServiceStatus.AVAILABLE
+    application_registry: ServiceStatus = ServiceStatus.AVAILABLE
+    application_authentication: ServiceStatus = ServiceStatus.NOT_CONFIGURED
+    metrics: ServiceStatus = ServiceStatus.AVAILABLE
     ai: ServiceStatus = ServiceStatus.NOT_CONFIGURED
     search: ServiceStatus = Field(
         default=ServiceStatus.NOT_CONFIGURED,

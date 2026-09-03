@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from cesar_core.api.deps import get_request_application_context, get_search_manager
+from cesar_core.api.deps import get_search_application_context, get_search_manager
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.search.contracts import (
     SearchErrorDetail,
@@ -23,6 +23,9 @@ from cesar_core.search.errors import (
     SearchUpstreamUnavailableError,
 )
 from cesar_core.search.manager import SearchManager
+from cesar_core.security.contracts import SecurityErrorResponse
+from cesar_core.telemetry.metrics import METRICS
+from cesar_core.telemetry.tracing import trace_search_success
 
 router = APIRouter(prefix="/v1", tags=["search"])
 
@@ -32,18 +35,23 @@ router = APIRouter(prefix="/v1", tags=["search"])
     response_model=SearchResponse,
     responses={
         403: {"model": SearchErrorResponse},
+        401: {"model": SecurityErrorResponse},
+        429: {"model": SecurityErrorResponse},
         502: {"model": SearchErrorResponse},
         503: {"model": SearchErrorResponse},
     },
 )
 async def search_web(
     payload: SearchRequestPayload,
-    context: ApplicationContext = Depends(get_request_application_context),
+    context: ApplicationContext = Depends(get_search_application_context),
     manager: SearchManager = Depends(get_search_manager),
 ) -> SearchResponse | JSONResponse:
     request = SearchRequest(context=context, **payload.model_dump())
     try:
-        return await manager.search(request)
+        response = await manager.search(request)
+        METRICS.observe_search(context.application_id, response)
+        trace_search_success(context, response)
+        return response
     except (
         SearchApplicationDeniedError,
         SearchCostPolicyDeniedError,

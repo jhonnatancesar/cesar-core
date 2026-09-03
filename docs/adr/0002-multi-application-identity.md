@@ -23,6 +23,11 @@ carrega, por requisição, a identidade completa da execução:
 `collection_worker`), `purpose`, `request_id` e `correlation_id` -- ver
 ADR 0007 para por que não há um `trace_id` separado.
 
+Na TASK-118E cada entrada também declara um `client_id` estável e scopes de
+capability. `gg_oferta` usa `ggoferta-core-client` com AI/Search;
+`claudiao-core-client` é apenas um identificador reservado, sem credential e
+sem scopes. A identidade efetiva vem da autenticação, nunca de header de ID.
+
 ## Consequências
 
 Adicionar uma nova aplicação consumidora no futuro é uma entrada nova no

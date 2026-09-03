@@ -22,8 +22,11 @@ from cesar_core.ai.errors import (
     AIUpstreamUnavailableError,
 )
 from cesar_core.ai.manager import AIManager
-from cesar_core.api.deps import get_ai_manager, get_request_application_context
+from cesar_core.api.deps import get_ai_application_context, get_ai_manager
 from cesar_core.applications.context import ApplicationContext
+from cesar_core.security.contracts import SecurityErrorResponse
+from cesar_core.telemetry.metrics import METRICS
+from cesar_core.telemetry.tracing import trace_ai_success
 
 router = APIRouter(prefix="/v1/ai", tags=["ai"])
 
@@ -33,18 +36,23 @@ router = APIRouter(prefix="/v1/ai", tags=["ai"])
     response_model=AIResponse,
     responses={
         403: {"model": AIErrorResponse},
+        401: {"model": SecurityErrorResponse},
+        429: {"model": SecurityErrorResponse},
         502: {"model": AIErrorResponse},
         503: {"model": AIErrorResponse},
     },
 )
 async def generate_ai(
     payload: AIRequestPayload,
-    context: ApplicationContext = Depends(get_request_application_context),
+    context: ApplicationContext = Depends(get_ai_application_context),
     manager: AIManager = Depends(get_ai_manager),
 ) -> AIResponse | JSONResponse:
     request = AIRequest(context=context, **payload.model_dump())
     try:
-        return await manager.generate(request)
+        response = await manager.generate(request)
+        METRICS.observe_ai(context.application_id, response)
+        trace_ai_success(context, response)
+        return response
     except (
         AIApplicationDeniedError,
         AICostPolicyDeniedError,
