@@ -62,10 +62,28 @@ falhas exigiu alterar domínio, auth, quota, adapters ou semântica de respostas
 
 ## Publicação e limites
 
-Este registro certifica a fase local, não antecipa sucesso do GitHub Actions.
-O workflow da tag deve registrar digest e validar package privado; o operador
-deve fazer pull e smoke do digest publicado. Digest CI pode diferir do local
-por metadata/revision/attestation. Tag Git v1.0.0 é imutável.
+Publicação concluída: [Actions 33902224388](https://github.com/jhonnatancesar/cesar-core/actions/runs/33902224388),
+todos os passos aprovados, incluindo verificação de package privado e pull CI.
+Tag anotada `v1.0.0`, imutável, aponta para
+`b22a5e88b8767657ce919b03886a52f5b2645cf3`.
+
+Imagem: `ghcr.io/jhonnatancesar/cesar-core`.
+Digest publicado e confirmado pelo pull local:
+`sha256:e96feababeec5626ecf0fd696e0c46188c8e0009cbd0092166d91088125bf3ad`.
+Tags: `1.0.0`, `1.0`, `1`, `latest`,
+`sha-b22a5e88b8767657ce919b03886a52f5b2645cf3`.
+Package PRIVATE confirmado pela API do GitHub após publicação.
+
+A imagem baixada foi executada **por esse digest** no Compose DEV. Versão
+1.0.0, UID 10001, health/ready ok com gateways habilitados. AI retornou
+CESAR_RELEASE_OK, usage prompt=31/completion=24/total=55, cap=512. Search retornou
+os mesmos três resultados normalizados, primeira chamada cached=false e segunda
+true. Quota 429, restart Core e restart stack preservaram contador/TTL (44.841ms
+restantes). Verificação dos secrets usados nas respostas/logs reais passou.
+Não se usou somente o cache da imagem local como prova de publicação.
+
+O digest CI difere do local por metadata/revision/attestation. Este complemento
+documental posterior à publicação não move nem recria a tag.
 
 Sem dashboard, TLS externo, HA Redis ou distribuição pública genérica nesta
 release. Disponibilidade dos providers gratuitos é externa. O consumidor precisa
