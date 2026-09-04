@@ -54,6 +54,16 @@ fake readiness positivo, exatamente o que esta TASK proíbe.
 
 ## Consequências
 
+Desde a ADR 0018, AI/Search habilitados também exigem armazenamento de quota
+acessível e durável. O probe Redis é somente leitura, não consome quota nem
+avalia saldo. Indisponibilidade/má configuração implica `degraded`, recuperação
+retorna `ok` automaticamente; quota esgotada não altera health/readiness.
+Com os gateways desabilitados, Redis não é dependência obrigatória.
+Readiness diferencia `reason=quota_store_misconfigured` (configuração incompatível)
+de `quota_store_unavailable` (indisponível/não verificável), ambos `degraded`.
+`reason` é opcional e omitido quando não há falha de quota; `core=available`
+continua significando que o processo existe, não que gateways estejam prontos.
+
 `health/service.py::get_readiness()` deriva seu resultado de
 `get_capabilities()` (não de um valor hardcoded independente), para que
 a regra acima fique estruturalmente amarrada no código, não apenas

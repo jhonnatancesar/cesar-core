@@ -30,6 +30,26 @@ quota usam envelopes normalizados com request/correlation IDs. O endpoint
 operacional `GET /metrics` exporta Prometheus text e fica deliberadamente fora
 do OpenAPI de produto.
 
+Quota persistente (ADR 0018): excedente permanece `429 quota_exceeded`,
+`Retry-After` e IDs normalizados, antes do upstream. Redis indisponível produz
+`503 quota_store_unavailable`; configuração sem durabilidade exigida produz
+`503 quota_store_misconfigured`, no mesmo envelope de segurança. Nenhum deles
+é erro de provider nem quota excedida. `/ready` acrescenta `reason` opcional
+com esses códigos, omitido quando ausente. Nenhum endpoint novo foi criado;
+campos de sucesso AI/Search e security scheme não mudaram. OpenAPI regenerado
+somente para documentar esse campo opcional no modelo existente de readiness.
+
+Contracts históricos Core continuam em `test_omniroute_contract.py` e
+`test_security_contract.py` (22). O fixture de quota usa namespace Redis de
+teste único por caso; só testes não-contract usam um fake em memória.
+`test_persistent_quota_contract.py` acrescenta sete cenários reais (concorrência,
+TTL/corrupção, AOF, restart Core, Redis indisponível, OmniRoute e SearXNG recovery).
+Mais dois cenários reais inicializam outro Redis com AOF desligado ou fsync
+everysec: ambos respondem PING mas impedem AI/Search e degradam readiness com
+reason explícito. Nenhum teste ou código Core executa CONFIG SET.
+Executar exclusivamente com `scripts/run_118h_contracts.py core-persistence`
+e stack descartável `scripts/stack_118h_dev.py up/down`; nunca contra PROD.
+
 AI (118F): fornecer exatamente um de `prompt` ou `messages`. O legado `prompt`
 vira uma única mensagem `user`; a lista tipada preserva ordem e roles
 `system|user|assistant`. Lista vazia, conteúdo não textual/em branco, role

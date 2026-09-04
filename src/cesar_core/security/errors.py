@@ -30,3 +30,18 @@ class QuotaExceededError(SecurityError):
     def __init__(self, retry_after_seconds: int) -> None:
         super().__init__("Application request quota exceeded")
         self.retry_after_seconds = retry_after_seconds
+
+
+class QuotaStoreUnavailableError(SecurityError):
+    code = "quota_store_unavailable"
+    status_code = 503
+
+    def __init__(self) -> None:
+        super().__init__("Application quota storage unavailable")
+
+
+class QuotaStoreMisconfiguredError(QuotaStoreUnavailableError):
+    code = "quota_store_misconfigured"
+
+    def __init__(self) -> None:
+        SecurityError.__init__(self, "Application quota storage durability requirements not met")

@@ -13,6 +13,6 @@ def read_health() -> HealthStatus:
     return get_health()
 
 
-@router.get("/ready", response_model=ReadinessStatus)
+@router.get("/ready", response_model=ReadinessStatus, response_model_exclude_none=True)
 async def read_readiness() -> ReadinessStatus:
     return await probe_readiness()

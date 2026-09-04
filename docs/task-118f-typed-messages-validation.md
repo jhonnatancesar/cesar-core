@@ -1,6 +1,7 @@
 # TASK-118F — mensagens tipadas e integração DEV
 
-Estado: aguardando revisão; sem commit/push/PROD.
+Estado: aprovada, commitada e publicada em main (`95b6996`); sem deploy PROD.
+Integração GG Oferta publicada em `c383fdc`. A validação DEV da 118H foi aprovada.
 
 Contrato legado `prompt` preservado; novo `messages` aceita somente
 system/user/assistant com conteúdo textual. XOR e validação geram 400 seguro;

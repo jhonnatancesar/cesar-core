@@ -27,8 +27,11 @@ O projeto concluiu a fundação (**TASK-118A**), o transporte OmniRoute
 - credenciais Core→OmniRoute independentes para AI e Search;
 - métricas Prometheus em `/metrics` e tracing estruturado sem payload/segredos.
 
-Ainda não estão implementadas as integrações do GG Oferta (118F/118G) nem o
-deployment de produção. Cada gateway aparece como `not_configured` enquanto
+As integrações do GG Oferta de AI (118F) e Search (118G) estão implementadas,
+aprovadas e publicadas em `main`, com rollout desligado por padrão. A 118H
+concluiu a validação DEV e foi aprovada; deployment de produção não foi
+executado nem está autorizado. Ver `docs/task-118h-rollout-resilience.md`.
+Cada gateway aparece como `not_configured` enquanto
 sua flag estiver falsa ou faltar seu alvo padrão; OmniRoute fica `available`
 quando AI ou Search estiver configurado.
 
@@ -59,7 +62,7 @@ e `POST /v1/ai/generate` (ADR 0014).
 **TASK-118D** (Central Web Search Gateway, concluída): contrato neutro,
 `SearchManager`, policy por aplicação/purpose/classe, adapter OmniRoute,
 usage/tracing, semântica explícita de fallback e `POST /v1/search` (ADR 0015).
-Não migra o Market Research do GG Oferta; essa integração pertence à 118G.
+A migração do Market Research foi entregue posteriormente pela 118G.
 
 **TASK-118E** (Security, Registry & Observability): `gg_oferta` autenticado por
 credencial Bearer em arquivo e autorizado para AI/Search; `claudiao` continua
@@ -67,6 +70,15 @@ credencial Bearer em arquivo e autorizado para AI/Search; `claudiao` continua
 aplicadas antes do manager/upstream. Métricas e logs estruturados agregam
 application/service/purpose, IDs, provider/model, latência, fallback e usage
 sem registrar prompts, queries ou segredos (ADR 0016).
+
+**TASK-118F/118G** (concluídas e publicadas): messages tipadas retrocompatíveis,
+integração AI no GG Oferta e Search via SearXNG, com enriquecimento Firecrawl
+separado. Commits Core: `95b6996` (118F) e `3578f2b` (118G); GG Oferta:
+`c383fdc` (118F) e `80dc135` (118G). Publicação de código não equivale a deploy.
+
+**TASK-118H** (validação DEV concluída e aprovada): restart real do Core,
+recuperação de dependências, rollback AI/Search e runbook operacional. Ver
+`docs/task-118h-rollout-resilience.md`. Nenhum rollout PROD autorizado.
 
 ## Estrutura
 
@@ -177,8 +189,23 @@ purposes possuem cobertura.
 consumidor reservado. `/ready` degrada se AI/Search estiver habilitado sem uma
 credencial de aplicação legível ou sem a credencial OmniRoute específica da
 capability. `/metrics` usa o formato de exposição Prometheus e somente labels
-operacionais de baixa cardinalidade. A quota atual é uma fixed window por
-processo; uma implantação com múltiplas réplicas exigirá backend distribuído.
+operacionais de baixa cardinalidade. A quota é uma fixed window de 60 segundos
+por aplicação/capability, compartilhada em Redis e persistida em AOF. Restart do
+Core não reinicia o saldo; réplicas devem usar o mesmo namespace, Redis e limites.
+Excesso retorna `429 quota_exceeded` antes do upstream. Armazenamento inacessível
+retorna `503 quota_store_unavailable`; configuração incompatível retorna
+`503 quota_store_misconfigured`, sem consumo upstream nem fallback em memória.
+`/ready` fica `degraded` com `reason` contendo esse código; saldo
+esgotado não degrada readiness nem liveness. Ver [ADR 0018](docs/adr/0018-persistent-quota-recovery.md).
+
+Reutilizar Redis da plataforma com volume persistente, `appendonly yes`,
+`appendfsync always`, `no-appendfsync-on-rewrite no` e `maxmemory-policy noeviction`.
+O Core verifica esses requisitos, não reconfigura o servidor. Configurar
+`CESAR_CORE_SECURITY_QUOTA_REDIS_URL` sem segredo e, se autenticado,
+`CESAR_CORE_SECURITY_QUOTA_REDIS_PASSWORD_FILE`; usar namespace estável exclusivo
+por ambiente. O Redis original deste DEV não foi modificado: a prova usa uma
+instância descartável da mesma imagem. Não habilitar gateways em outro ambiente
+sem validar esses requisitos. A disponibilidade é fail-closed, não HA automática.
 
 Para subir a API localmente:
 
@@ -192,3 +219,8 @@ uvicorn cesar_core.api.app:app --host 127.0.0.1 --port 8100
 - `contracts/` -- OpenAPI exportado da aplicação FastAPI.
 - `deployment/` -- topologia pretendida de implantação (container-to-container,
   loopback-only); o exemplo ainda não é um deployment executável.
+
+## Licença
+
+Todos os direitos reservados. Ver [LICENSE](LICENSE). Componentes externos
+mantêm suas próprias licenças. Esta distribuição não concede licença open source.

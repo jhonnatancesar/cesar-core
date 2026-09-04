@@ -24,8 +24,9 @@ upstream e observar uso sem registrar payloads ou segredos.
   `ggoferta-search`), ambas de inferência e sem escopo administrativo.
 - Quotas de requests/minuto são separadas por application/capability e
   verificadas antes de policy, manager e upstream. Excesso retorna 429 com
-  `Retry-After`. O limiter atual é por processo; múltiplas réplicas exigirão um
-  backend compartilhado antes de produção distribuída.
+  `Retry-After`. O limiter inicialmente era por processo (118E). A ADR 0018
+  substitui essa limitação por Redis compartilhado/durável, mantendo a ordem
+  do gate e a contagem de admissões por aplicação/capability.
 - `/metrics` exporta contadores/somas em Prometheus text. Labels públicas são
   operacionais e de baixa cardinalidade; credenciais, prompts, queries e
   conteúdo nunca entram em métricas.

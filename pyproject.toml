@@ -2,6 +2,8 @@
 name = "cesar-core"
 version = "0.1.0"
 description = "César Core -- infraestrutura central multi-aplicação de IA, Web Search e políticas de uso."
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1.0",
@@ -9,6 +11,7 @@ dependencies = [
   "pydantic>=2.0,<3.0",
   "pydantic-settings>=2.0,<3.0",
   "httpx>=0.28,<1.0",
+  "redis>=6.4,<7.0",
 ]
 
 [project.optional-dependencies]

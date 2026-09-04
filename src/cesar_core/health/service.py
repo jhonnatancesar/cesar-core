@@ -4,6 +4,7 @@ Ver ADR 0008 para a semântica exata de /health, /ready e /v1/capabilities.
 """
 
 import httpx
+from starlette.concurrency import run_in_threadpool
 
 from cesar_core.ai.config import AIConfig
 from cesar_core.health.models import (
@@ -18,6 +19,8 @@ from cesar_core.omniroute.errors import OmniRouteError
 from cesar_core.search.config import SearchConfig
 from cesar_core.security.config import SecurityConfig
 from cesar_core.security.credentials import read_secret
+from cesar_core.security.errors import QuotaStoreUnavailableError
+from cesar_core.security.quota import probe_quota_storage
 
 
 def get_health() -> HealthStatus:
@@ -115,6 +118,7 @@ async def probe_readiness() -> ReadinessStatus:
         if credential_path is None:
             raise OSError("Application credential is not configured")
         read_secret(credential_path)
+        await run_in_threadpool(probe_quota_storage)
         omniroute_config = OmniRouteConfig()
         capability_configs: list[tuple[str, OmniRouteConfig]] = []
         if ai_config.is_configured:
@@ -129,6 +133,8 @@ async def probe_readiness() -> ReadinessStatus:
             (capability, OmniRouteClient(config))
             for capability, config in capability_configs
         ]
+    except QuotaStoreUnavailableError as exc:
+        return ReadinessStatus(status="degraded", reason=exc.code)
     except (OSError, ValueError):
         return get_readiness(
             ai_config=ai_config,

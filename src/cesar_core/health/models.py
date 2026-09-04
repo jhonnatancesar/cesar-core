@@ -1,6 +1,7 @@
 """Modelos de saúde/prontidão/capacidades do César Core."""
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -41,6 +42,9 @@ class ReadinessStatus(BaseModel):
 
     status: str = "ok"
     core: ServiceStatus = ServiceStatus.AVAILABLE
+    reason: Literal["quota_store_misconfigured", "quota_store_unavailable"] | None = Field(
+        default=None, description="Safe quota dependency failure reason; omitted when absent."
+    )
 
 
 class CapabilitiesResponse(BaseModel):

@@ -670,6 +670,22 @@
           "core": {
             "$ref": "#/components/schemas/ServiceStatus",
             "default": "available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "quota_store_misconfigured",
+                  "quota_store_unavailable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Safe quota dependency failure reason; omitted when absent."
           }
         },
         "type": "object",
