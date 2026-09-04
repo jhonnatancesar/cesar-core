@@ -4,6 +4,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from cesar_core.admin.storage import get_store
 from cesar_core.ai.contracts import AIRequest, AIRequestPayload
 from cesar_core.ai.manager import AIManager
 from cesar_core.ai.policy import AIModelTarget, AIPolicy
@@ -158,7 +159,13 @@ def test_messages_do_not_bypass_auth_capability_quota_or_policy(
     assert send(client, **payload, max_tokens=9).status_code == 403
     assert not wire
     QUOTA_LIMITER.reset()
-    monkeypatch.setenv("CESAR_CORE_SECURITY_AI_REQUESTS_PER_MINUTE", "1")
+    get_store().update_application(
+        "gg_oferta",
+        display_name=entry.display_name,
+        state="active",
+        capabilities={"ai", "search"},
+        quotas={"ai": 1, "search": 60},
+    )
     assert send(client, **payload).status_code == 200
     assert send(client, **payload).status_code == 429
     assert len(wire) == 1

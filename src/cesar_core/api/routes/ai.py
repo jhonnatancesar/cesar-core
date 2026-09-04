@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from cesar_core.admin.storage import get_store
 from cesar_core.ai.contracts import (
     AIErrorDetail,
     AIErrorResponse,
@@ -52,6 +53,18 @@ async def generate_ai(
         response = await manager.generate(request)
         METRICS.observe_ai(context.application_id, response)
         trace_ai_success(context, response)
+        tokens = (
+            response.usage.total_tokens
+            if response.usage and response.usage.total_tokens
+            else 0
+        )
+        get_store().record_usage(
+            context.application_id.value,
+            "ai",
+            "success",
+            provider=response.provider or response.provider_gateway,
+            tokens=tokens,
+        )
         return response
     except (
         AIApplicationDeniedError,
@@ -92,6 +105,7 @@ def _error_response(
     *,
     upstream_request_id: str | None = None,
 ) -> JSONResponse:
+    get_store().record_usage(context.application_id.value, "ai", "error")
     error = AIErrorResponse(
         error=AIErrorDetail(
             code=code,

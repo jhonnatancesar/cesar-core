@@ -1,7 +1,7 @@
 name: cesar-core
 services:
   cesar-core:
-    image: ${CESAR_CORE_IMAGE:-ghcr.io/jhonnatancesar/cesar-core:1.0.0}
+    image: ${CESAR_CORE_IMAGE:-ghcr.io/jhonnatancesar/cesar-core:1.1.0}
     platform: linux/amd64
     restart: unless-stopped
     init: true
@@ -22,6 +22,7 @@ services:
       CESAR_CORE_SECURITY_QUOTA_NAMESPACE: ${CESAR_CORE_SECURITY_QUOTA_NAMESPACE:-cesar-core:quota:v1}
       CESAR_CORE_SECURITY_AI_REQUESTS_PER_MINUTE: ${CESAR_CORE_SECURITY_AI_REQUESTS_PER_MINUTE:-60}
       CESAR_CORE_SECURITY_SEARCH_REQUESTS_PER_MINUTE: ${CESAR_CORE_SECURITY_SEARCH_REQUESTS_PER_MINUTE:-60}
+      CESAR_CORE_ADMIN_DATABASE_PATH: /var/lib/cesar-core/control-plane.sqlite3
       CESAR_CORE_AI_ENABLED: ${CESAR_CORE_AI_ENABLED:-false}
       CESAR_CORE_AI_DEFAULT_MODEL: ${CESAR_CORE_AI_DEFAULT_MODEL:-}
       CESAR_CORE_AI_MODEL_ENFORCES_MAX_TOKENS: ${CESAR_CORE_AI_MODEL_ENFORCES_MAX_TOKENS:-false}
@@ -32,6 +33,7 @@ services:
       CESAR_CORE_SEARCH_TECHNICAL_DOCUMENTATION_PROVIDER: context7
       CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT: ${CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT:-20}
     secrets: [application, omniroute_ai, omniroute_search]
+    volumes: [control-plane-data:/var/lib/cesar-core]
 
   redis:
     image: redis:8.6.5-alpine@sha256:cd218f4b106a332c5c992e38a9480bfb9d7e9f8f7b0ec9a0023bfa36d9a408f9
@@ -91,6 +93,7 @@ networks:
 volumes:
   quota-data: {}
   omniroute-data: {}
+  control-plane-data: {}
 secrets:
   application:
     file: ${CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE:-./.secrets/ggoferta-core-client}

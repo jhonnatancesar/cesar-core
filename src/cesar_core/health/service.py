@@ -6,6 +6,8 @@ Ver ADR 0008 para a semântica exata de /health, /ready e /v1/capabilities.
 import httpx
 from starlette.concurrency import run_in_threadpool
 
+from cesar_core.admin.config import AdminConfig
+from cesar_core.admin.storage import get_store
 from cesar_core.ai.config import AIConfig
 from cesar_core.health.models import (
     CapabilitiesResponse,
@@ -70,10 +72,18 @@ def get_capabilities(
     ai = ai_config or AIConfig()
     search = search_config or SearchConfig()
     security = security_config or SecurityConfig()
+    authentication_configured = security.is_configured
+    if not authentication_configured:
+        pepper = AdminConfig().credential_pepper_file
+        authentication_configured = bool(
+            pepper
+            and pepper.is_file()
+            and any(row["revoked_at"] is None for row in get_store().list_credentials())
+        )
     return CapabilitiesResponse(
         application_authentication=(
             ServiceStatus.AVAILABLE
-            if security.is_configured
+            if authentication_configured
             else ServiceStatus.NOT_CONFIGURED
         ),
         ai=(
@@ -115,16 +125,23 @@ async def probe_readiness() -> ReadinessStatus:
     security_config = SecurityConfig()
     try:
         credential_path = security_config.gg_oferta_api_key_file
-        if credential_path is None:
-            raise OSError("Application credential is not configured")
-        read_secret(credential_path)
+        if credential_path is not None:
+            read_secret(credential_path)
+        else:
+            pepper = AdminConfig().credential_pepper_file
+            if (
+                not pepper
+                or not pepper.is_file()
+                or not any(
+                    row["revoked_at"] is None for row in get_store().list_credentials()
+                )
+            ):
+                raise OSError("Application credential is not configured")
         await run_in_threadpool(probe_quota_storage)
         omniroute_config = OmniRouteConfig()
         capability_configs: list[tuple[str, OmniRouteConfig]] = []
         if ai_config.is_configured:
-            capability_configs.append(
-                ("ai", omniroute_config.for_capability("ai"))
-            )
+            capability_configs.append(("ai", omniroute_config.for_capability("ai")))
         if search_config.is_configured:
             capability_configs.append(
                 ("search", omniroute_config.for_capability("search"))
@@ -146,7 +163,9 @@ async def probe_readiness() -> ReadinessStatus:
     try:
         authentication_enforced = True
         if search_config.has_general_web_provider and search_config.provider_health_url:
-            async with httpx.AsyncClient(timeout=3, trust_env=False, follow_redirects=False) as probe:
+            async with httpx.AsyncClient(
+                timeout=3, trust_env=False, follow_redirects=False
+            ) as probe:
                 response = await probe.get(search_config.provider_health_url)
                 response.raise_for_status()
         for capability, client in clients:

@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from cesar_core.admin.storage import get_store
 from cesar_core.api.deps import get_search_application_context, get_search_manager
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.search.contracts import (
@@ -51,6 +52,15 @@ async def search_web(
         response = await manager.search(request)
         METRICS.observe_search(context.application_id, response)
         trace_search_success(context, response)
+        get_store().record_usage(
+            context.application_id.value,
+            "search",
+            "success",
+            provider=response.provider,
+            cached=response.cached,
+            tokens=response.usage.llm_tokens or 0,
+            queries=response.usage.queries_used,
+        )
         return response
     except (
         SearchApplicationDeniedError,
@@ -90,6 +100,7 @@ def _error_response(
     *,
     upstream_request_id: str | None = None,
 ) -> JSONResponse:
+    get_store().record_usage(context.application_id.value, "search", "error")
     error = SearchErrorResponse(
         error=SearchErrorDetail(
             code=code,

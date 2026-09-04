@@ -18,6 +18,7 @@ import httpx
 import pytest
 import uvicorn
 
+from cesar_core.admin.storage import get_store
 from cesar_core.api import deps
 from cesar_core.api.app import create_app
 from cesar_core.applications.identity import ApplicationId, ApplicationState
@@ -201,8 +202,14 @@ def test_real_core_auth_authorization_and_pre_upstream_quota(
     assert len(wire) == before
     monkeypatch.setitem(REGISTRY, ApplicationId.GG_OFERTA, entry)
     deps.QUOTA_LIMITER.reset()
-    monkeypatch.setenv(
-        f"CESAR_CORE_SECURITY_{capability.upper()}_REQUESTS_PER_MINUTE", "1"
+    current = get_store().get_application("gg_oferta")
+    assert current is not None
+    get_store().update_application(
+        "gg_oferta",
+        display_name=current["display_name"],
+        state="active",
+        capabilities=set(current["capabilities"]),
+        quotas={**current["quotas"], capability: 1},
     )
     assert call(capability).status_code == 200
     before = len(wire)

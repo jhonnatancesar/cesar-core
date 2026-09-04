@@ -43,7 +43,8 @@ class RedisQuotaStore:
     def _client(self) -> Redis:
         password = (
             read_secret(self.config.quota_redis_password_file)
-            if self.config.quota_redis_password_file else None
+            if self.config.quota_redis_password_file
+            else None
         )
         return Redis.from_url(
             self.config.quota_redis_url,
@@ -59,8 +60,10 @@ class RedisQuotaStore:
     @staticmethod
     def _durable(client: Redis) -> None:
         required = {
-            "appendonly": "yes", "appendfsync": "always",
-            "maxmemory-policy": "noeviction", "no-appendfsync-on-rewrite": "no",
+            "appendonly": "yes",
+            "appendfsync": "always",
+            "maxmemory-policy": "noeviction",
+            "no-appendfsync-on-rewrite": "no",
         }
         actual = client.config_get(*required)
         if any(actual.get(key) != value for key, value in required.items()):
@@ -77,6 +80,13 @@ class RedisQuotaStore:
             self._durable(client)
             allowed, ttl = client.eval(CONSUME, 1, key, limit, window_ms)
             return int(allowed), int(ttl)
+
+    def snapshot(self, key: str) -> tuple[int, int]:
+        with self._client() as client:
+            self._durable(client)
+            raw = client.get(key)
+            ttl = client.pttl(key)
+            return (int(raw) if raw else 0, max(0, int(ttl)))
 
     def reset(self) -> None:
         # Seam estritamente de testes; nenhum startup chama isto.
@@ -113,7 +123,9 @@ class QuotaLimiter:
         try:
             config = SecurityConfig()
             key = f"{config.quota_namespace}:{application_id.value}:{capability}"
-            allowed, ttl = build_store(config).consume(key, limit, self._window_seconds * 1000)
+            allowed, ttl = build_store(config).consume(
+                key, limit, self._window_seconds * 1000
+            )
         except (RedisError, OSError, ValueError):
             raise QuotaStoreUnavailableError() from None
         if not allowed:

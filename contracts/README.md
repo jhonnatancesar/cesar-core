@@ -64,3 +64,8 @@ suas rotas upstream no OpenAPI do César Core.
 Capabilities diferencia `search_general_web` de
 `search_technical_documentation`: disponibilidade de um target especializado
 não implica cobertura de busca Web geral.
+
+O Control Plane da TASK-119 usa `/admin/api` e fica deliberadamente fora do
+OpenAPI de produto: suas rotas são privadas, protegidas por sessão/CSRF e não
+constituem contrato para aplicações consumidoras. A tela “Rotas” deriva seu
+inventário do OpenAPI runtime, sem manter uma segunda lista manual.

@@ -1,5 +1,6 @@
 """Aplicação FastAPI do César Core."""
 
+from contextlib import asynccontextmanager
 from time import perf_counter
 
 from fastapi import FastAPI, Request
@@ -8,6 +9,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from cesar_core import __version__
+from cesar_core.admin.routes import api as admin_api
+from cesar_core.admin.routes import ui as admin_ui
+from cesar_core.admin.storage import get_store
 from cesar_core.api.routes import ai, capabilities, health, metrics, search
 from cesar_core.security.contracts import SecurityErrorDetail, SecurityErrorResponse
 from cesar_core.security.errors import (
@@ -22,7 +26,13 @@ from cesar_core.telemetry.tracing import trace_http_completion
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="César Core", version=__version__)
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # Migrations idempotentes antes de o app aceitar tráfego.
+        get_store()
+        yield
+
+    app = FastAPI(title="César Core", version=__version__, lifespan=lifespan)
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(request: Request, exc: RequestValidationError):
@@ -100,6 +110,8 @@ def create_app() -> FastAPI:
     app.include_router(ai.router)
     app.include_router(search.router)
     app.include_router(metrics.router)
+    app.include_router(admin_api)
+    app.include_router(admin_ui)
 
     return app
 

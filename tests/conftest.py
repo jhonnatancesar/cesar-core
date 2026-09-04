@@ -14,12 +14,22 @@ from uuid import uuid4
 
 import pytest
 
+from cesar_core.admin.storage import reset_store_for_tests
+
 
 @pytest.fixture(autouse=True)
-def isolated_quota_store(request, monkeypatch):
+def isolated_quota_store(request, monkeypatch, tmp_path):
     """Units usam fake explícito; contracts nunca substituem o Redis real."""
-    monkeypatch.setenv("CESAR_CORE_SECURITY_QUOTA_NAMESPACE", f"cesar-core:test:{uuid4().hex}")
+    monkeypatch.setenv(
+        "CESAR_CORE_SECURITY_QUOTA_NAMESPACE", f"cesar-core:test:{uuid4().hex}"
+    )
+    monkeypatch.setenv(
+        "CESAR_CORE_ADMIN_DATABASE_PATH", str(tmp_path / "control-plane.sqlite3")
+    )
+    reset_store_for_tests()
     if request.node.get_closest_marker("contract"):
+        yield
+        reset_store_for_tests()
         return
 
     class MemoryTestStore:
@@ -45,6 +55,8 @@ def isolated_quota_store(request, monkeypatch):
 
     store = MemoryTestStore()
     monkeypatch.setattr("cesar_core.security.quota.build_store", lambda config: store)
+    yield
+    reset_store_for_tests()
 
 
 def pytest_pyfunc_call(pyfuncitem):

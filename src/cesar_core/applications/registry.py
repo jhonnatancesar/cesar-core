@@ -1,42 +1,75 @@
-"""Registry estático das aplicações conhecidas pelo César Core.
+"""Registry persistente de aplicações consumidoras."""
 
-GG Oferta é o primeiro consumidor registrado como ativo. Claudião permanece
-reservado: sua identidade existe para permitir ativação sem refatorar o
-contrato, mas não há integração funcional para ele.
-"""
+from collections.abc import Iterator, MutableMapping
 
+from cesar_core.admin.storage import get_store
 from cesar_core.applications.identity import ApplicationId, ApplicationState
 from cesar_core.applications.models import Application
 
-REGISTRY: dict[ApplicationId, Application] = {
-    ApplicationId.GG_OFERTA: Application(
-        id=ApplicationId.GG_OFERTA,
-        state=ApplicationState.ACTIVE,
-        display_name="GG Oferta",
-        client_id="ggoferta-core-client",
-        allowed_capabilities=frozenset({"ai", "search"}),
-    ),
-    ApplicationId.CLAUDIAO: Application(
-        id=ApplicationId.CLAUDIAO,
-        state=ApplicationState.RESERVED,
-        display_name="Claudião",
-        client_id="claudiao-core-client",
-        allowed_capabilities=frozenset(),
-    ),
-}
-
 
 def get_application(application_id: ApplicationId) -> Application:
-    """Retorna a entrada do registry para a aplicação informada."""
-    return REGISTRY[application_id]
+    row = get_store().get_application(application_id.value)
+    if row is None:
+        raise KeyError(application_id)
+    return Application(
+        id=ApplicationId(row["id"]),
+        state=ApplicationState(row["state"]),
+        display_name=row["display_name"],
+        client_id=row["client_id"],
+        allowed_capabilities=frozenset(row["capabilities"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        protected=row["protected"],
+    )
+
+
+def list_applications() -> list[Application]:
+    return [
+        get_application(ApplicationId(row["id"]))
+        for row in get_store().list_applications()
+    ]
 
 
 def is_active(application_id: ApplicationId) -> bool:
-    """Indica se a aplicação está com estado ACTIVE no registry."""
-    return REGISTRY[application_id].state is ApplicationState.ACTIVE
+    return get_application(application_id).state is ApplicationState.ACTIVE
 
 
 def allows_capability(application_id: ApplicationId, capability: str) -> bool:
-    """Aplica privilégio mínimo do registry antes do domínio/upstream."""
     application = get_application(application_id)
-    return is_active(application_id) and capability in application.allowed_capabilities
+    return (
+        application.state is ApplicationState.ACTIVE
+        and capability in application.allowed_capabilities
+    )
+
+
+class _RegistryCompatibilityView(MutableMapping[ApplicationId, Application]):
+    """Vista de mapping para consumidores históricos; SQLite segue autoritativo."""
+
+    def __getitem__(self, key: ApplicationId) -> Application:
+        return get_application(key)
+
+    def __setitem__(self, key: ApplicationId, value: Application) -> None:
+        row = get_store().get_application(key.value)
+        if row is None:
+            raise KeyError(key)
+        get_store().update_application(
+            key.value,
+            display_name=value.display_name,
+            state=value.state.value,
+            capabilities=set(value.allowed_capabilities),
+            quotas={
+                cap: row["quotas"].get(cap, 60) for cap in value.allowed_capabilities
+            },
+        )
+
+    def __delitem__(self, key: ApplicationId) -> None:
+        raise TypeError("Applications cannot be deleted")
+
+    def __iter__(self) -> Iterator[ApplicationId]:
+        return (ApplicationId(row["id"]) for row in get_store().list_applications())
+
+    def __len__(self) -> int:
+        return len(get_store().list_applications())
+
+
+REGISTRY: MutableMapping[ApplicationId, Application] = _RegistryCompatibilityView()

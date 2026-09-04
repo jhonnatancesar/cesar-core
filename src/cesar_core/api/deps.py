@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from cesar_core.admin.storage import get_store
 from cesar_core.ai.config import AIConfig
 from cesar_core.ai.contracts import AIRequest, AIResponse
 from cesar_core.ai.errors import AIUpstreamUnavailableError
@@ -25,6 +26,7 @@ from cesar_core.ai.policy import AIModelTarget, AIPolicy, PolicyKey
 from cesar_core.ai.providers.omniroute import OmniRouteAIProvider
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
+from cesar_core.applications.registry import list_applications
 from cesar_core.omniroute.client import OmniRouteClient
 from cesar_core.omniroute.config import OmniRouteConfig
 from cesar_core.policy.purpose import Purpose
@@ -104,12 +106,11 @@ def _authorized_context(
     capability: str,
 ) -> ApplicationContext:
     authorize_capability(application_id, capability)
-    config = SecurityConfig()
-    limit = (
-        config.ai_requests_per_minute
-        if capability == "ai"
-        else config.search_requests_per_minute
-    )
+    limit = get_store().get_quota(application_id.value, capability)
+    if limit is None:
+        from cesar_core.security.errors import ApplicationAccessDeniedError
+
+        raise ApplicationAccessDeniedError("Application has no quota policy")
     QUOTA_LIMITER.check(application_id, capability, limit)
     context = ApplicationContext(
         application_id=application_id,
@@ -138,9 +139,7 @@ def get_search_application_context(
     x_service: str = Header(alias="X-Service"),
     x_purpose: str = Header(alias="X-Purpose"),
 ) -> ApplicationContext:
-    return _authorized_context(
-        request, application_id, x_service, x_purpose, "search"
-    )
+    return _authorized_context(request, application_id, x_service, x_purpose, "search")
 
 
 async def get_ai_manager() -> AsyncIterator[AIManager]:
@@ -154,15 +153,21 @@ async def get_ai_manager() -> AsyncIterator[AIManager]:
     for service_class in ServiceClass:
         model = config.model_for(service_class)
         if model is not None:
-            rules[(ApplicationId.GG_OFERTA, AI_WILDCARD_PURPOSE, service_class)] = (
-                AIModelTarget(
-                    model=model,
-                    provider=config.provider or None,
-                    paid=config.model_is_paid,
-                    enforces_max_tokens=config.model_enforces_max_tokens,
-                    max_tokens_limit=config.max_tokens_limit,
+            for application in list_applications():
+                if (
+                    application.state.value != "active"
+                    or "ai" not in application.allowed_capabilities
+                ):
+                    continue
+                rules[(application.id, AI_WILDCARD_PURPOSE, service_class)] = (
+                    AIModelTarget(
+                        model=model,
+                        provider=config.provider or None,
+                        paid=config.model_is_paid,
+                        enforces_max_tokens=config.model_enforces_max_tokens,
+                        max_tokens_limit=config.max_tokens_limit,
+                    )
                 )
-            )
 
     try:
         omniroute_config = OmniRouteConfig().for_capability("ai")
@@ -207,30 +212,34 @@ async def get_search_manager() -> AsyncIterator[SearchManager]:
     for service_class in ServiceClass:
         provider = config.provider_for(service_class)
         if provider is not None:
-            rules[
-                (
-                    ApplicationId.GG_OFERTA,
-                    SEARCH_WILDCARD_PURPOSE,
-                    service_class,
+            for application in list_applications():
+                if (
+                    application.state.value != "active"
+                    or "search" not in application.allowed_capabilities
+                ):
+                    continue
+                rules[(application.id, SEARCH_WILDCARD_PURPOSE, service_class)] = (
+                    SearchProviderTarget(
+                        provider=provider,
+                        paid=config.provider_is_paid,
+                        max_results_limit=config.max_results_limit,
+                    )
                 )
-            ] = SearchProviderTarget(
-                provider=provider,
-                paid=config.provider_is_paid,
-                max_results_limit=config.max_results_limit,
-            )
         documentation_provider = config.normalized_technical_documentation_provider
         if documentation_provider is not None:
-            rules[
-                (
-                    ApplicationId.GG_OFERTA,
-                    TECHNICAL_DOCUMENTATION_PURPOSE,
-                    service_class,
+            for application in list_applications():
+                if (
+                    application.state.value != "active"
+                    or "search" not in application.allowed_capabilities
+                ):
+                    continue
+                rules[
+                    (application.id, TECHNICAL_DOCUMENTATION_PURPOSE, service_class)
+                ] = SearchProviderTarget(
+                    provider=documentation_provider,
+                    paid=config.provider_is_paid,
+                    max_results_limit=config.max_results_limit,
                 )
-            ] = SearchProviderTarget(
-                provider=documentation_provider,
-                paid=config.provider_is_paid,
-                max_results_limit=config.max_results_limit,
-            )
 
     try:
         omniroute_config = OmniRouteConfig().for_capability("search")

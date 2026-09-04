@@ -5,6 +5,17 @@
 !src/
 !src/cesar_core/
 !src/cesar_core/**
+!frontend/
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/tsconfig.json
+!frontend/tsconfig.app.json
+!frontend/vite.config.ts
+!frontend/src/**
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
 !requirements/
 !requirements/*.lock
 **/__pycache__/**

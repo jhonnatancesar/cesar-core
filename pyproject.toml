@@ -1,6 +1,6 @@
 [project]
 name = "cesar-core"
-version = "1.0.0"
+version = "1.1.0"
 description = "César Core -- infraestrutura central multi-aplicação de IA, Web Search e políticas de uso."
 license = "LicenseRef-Proprietary"
 license-files = ["LICENSE"]
@@ -12,7 +12,11 @@ dependencies = [
   "pydantic-settings>=2.0,<3.0",
   "httpx>=0.28,<1.0",
   "redis>=6.4,<7.0",
+  "argon2-cffi>=25.1,<26.0",
 ]
+
+[project.scripts]
+cesar-core-admin-hash-password = "cesar_core.admin.cli:main"
 
 [project.optional-dependencies]
 dev = [

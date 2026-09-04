@@ -1,4 +1,4 @@
-"""Modelo de aplicação registrada no César Core."""
+from datetime import datetime
 
 from pydantic import BaseModel
 
@@ -13,3 +13,6 @@ class Application(BaseModel):
     display_name: str
     client_id: str
     allowed_capabilities: frozenset[str] = frozenset()
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    protected: bool = False

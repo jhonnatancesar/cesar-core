@@ -2,7 +2,7 @@
 
 Gateway central privado de AI e Web Search, com identidade de aplicação,
 policies de execução, quotas persistentes e observabilidade. Distribuição
-**1.0.0**, com todos os direitos reservados. A sequência TASK-118 está concluída;
+**1.1.0**, com todos os direitos reservados. A sequência TASK-118 está concluída;
 publicar esta release não implanta nem modifica o GG Oferta em PROD.
 
 ## Arquitetura
@@ -25,7 +25,7 @@ imagens separadas; o Core não contém nem modifica o OmniRoute.
 ## Recursos e limites
 
 - Bearer obrigatório em AI/Search; identidade derivada da credencial, não do body.
-- Registry: `gg_oferta=ACTIVE`; `claudiao=RESERVED`, sem credencial funcional.
+- Registry persistente: `gg_oferta=ACTIVE`; `claudiao=RESERVED` e protegido.
 - Autorização por capability e policies por aplicação/purpose/service class.
 - Classes economy/standard/quality; `FREE_ONLY` bloqueia targets declarados pagos.
 - Quota AI/Search pré-upstream, atômica, compartilhada e sem fallback em memória.
@@ -41,8 +41,36 @@ imagens separadas; o Core não contém nem modifica o OmniRoute.
   O Core não implementa Firecrawl scrape nem estratégia de Market Research.
 - `context7` é documentação técnica (`technical_documentation`), não Web Search
   geral. SearXNG é o target geral certificado para `market_research`.
-- A release não fornece cadastro genérico de consumidores: a distribuição
-  pública configurável é uma evolução futura, não uma feature desta versão.
+- Control Plane em `/admin`: aplicações, credenciais, quotas, uso, rotas e saúde.
+  Novas aplicações nascem `DISABLED`; não há exclusão pela interface.
+
+## Control Plane
+
+A interface administrativa React é servida pelo próprio Core em
+`http://127.0.0.1:8100/admin`. Ela oferece exatamente seis áreas: visão geral,
+aplicações, chaves de API, uso/quotas, rotas e saúde. Há temas claro e escuro;
+no primeiro acesso o tema do sistema é respeitado e a escolha posterior fica
+somente no `localStorage` do navegador.
+
+O painel fica indisponível (`503`) até senha Argon2id, pepper de credenciais e
+origem permitida estarem configurados. Gere o hash sem ecoar a senha:
+
+```sh
+cesar-core-admin-hash-password > .secrets/admin-password-hash
+```
+
+Crie o pepper com ao menos 32 bytes aleatórios e use o override dedicado:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.control-plane.yaml up -d
+```
+
+Credenciais novas usam `cc_<id>.<secret>`; somente HMAC com pepper é persistido,
+e o segredo é exibido uma vez. A credencial legada do GG Oferta permanece
+compatível e somente leitura. Sessões usam cookie opaco HttpOnly/SameSite=Strict,
+expiração absoluta e por inatividade, CSRF e validação Origin/Host. Em HTTPS,
+`CESAR_CORE_ADMIN_COOKIE_SECURE` deve permanecer `true`; `false` é exceção de
+loopback DEV.
 
 ## Execução Docker / Compose (recomendada)
 
@@ -67,7 +95,7 @@ curl http://127.0.0.1:8100/health
 curl http://127.0.0.1:8100/ready
 ```
 
-O Compose usa `ghcr.io/jhonnatancesar/cesar-core:1.0.0`, não `build:`.
+O Compose usa `ghcr.io/jhonnatancesar/cesar-core:1.1.0`, não `build:`.
 Para deploy reproduzível, defina `CESAR_CORE_IMAGE` com o digest publicado pelo
 workflow: `ghcr.io/jhonnatancesar/cesar-core@sha256:<digest>`.
 A rede backend é interna; OmniRoute/SearXNG usam a rede egress para providers.
