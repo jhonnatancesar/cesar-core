@@ -1,226 +1,263 @@
 # César Core
 
-Infraestrutura central multi-aplicação de IA, Web Search, políticas de uso e
-identidade de aplicação consumidora. O repositório é independente do GG
-Oferta e contém o transporte HTTP real de baixo nível para o OmniRoute.
+Gateway central privado de AI e Web Search, com identidade de aplicação,
+policies de execução, quotas persistentes e observabilidade. Distribuição
+**1.0.0**, com todos os direitos reservados. A sequência TASK-118 está concluída;
+publicar esta release não implanta nem modifica o GG Oferta em PROD.
 
-## Estado atual
-
-O projeto concluiu a fundação (**TASK-118A**), o transporte OmniRoute
-(**TASK-118B**) e as primeiras fatias dos gateways centrais de AI
-(**TASK-118C**), Web Search (**TASK-118D**) e segurança/observabilidade
-(**TASK-118E**). Estão disponíveis:
-
-- registry de aplicações e `ApplicationContext`;
-- contratos internos e boundaries separados de AI e Search;
-- políticas de classe de serviço e custo;
-- endpoints `/health`, `/ready` e `/v1/capabilities`;
-- `OmniRouteClient` para `/api/health`, `/v1/chat/completions` e `/v1/search`;
-- autenticação Bearer, timeout, correlação e erros normalizados do transporte.
-- policy AI por application/purpose/service class e restrição de custo;
-- `AIManager`, adapter OmniRoute e `POST /v1/ai/generate`;
-- resposta AI normalizada com usage, modelo, provider e IDs de telemetria.
-- policy Search por application/purpose/service class, `FREE_ONLY` e limite;
-- `SearchManager`, adapter OmniRoute e `POST /v1/search`;
-- resposta Search normalizada com resultados, usage, provider, cache e tracing.
-- autenticação Bearer aplicação→Core, registry com scopes e quota pré-upstream;
-- credenciais Core→OmniRoute independentes para AI e Search;
-- métricas Prometheus em `/metrics` e tracing estruturado sem payload/segredos.
-
-As integrações do GG Oferta de AI (118F) e Search (118G) estão implementadas,
-aprovadas e publicadas em `main`, com rollout desligado por padrão. A 118H
-concluiu a validação DEV e foi aprovada; deployment de produção não foi
-executado nem está autorizado. Ver `docs/task-118h-rollout-resilience.md`.
-Cada gateway aparece como `not_configured` enquanto
-sua flag estiver falsa ou faltar seu alvo padrão; OmniRoute fica `available`
-quando AI ou Search estiver configurado.
-
-## Escopo
-
-**TASK-118A** (fundação, concluída): estrutura de projeto, identidade de aplicações
-(`gg_oferta` = ACTIVE, `claudiao` = RESERVED), `ApplicationContext` completo
-(application/service/purpose/request_id/correlation_id), contratos neutros
-de AI/Search com boundary de provider próprio para cada um (sem chamadas
-reais), modelos de política (`service_class`, `cost_policy`) e os endpoints
-`/health`, `/ready` e `/v1/capabilities` -- semântica exata em ADR 0008.
-
-**TASK-118B** (transporte OmniRoute, concluída): `OmniRouteClient` real -- config,
-autenticação, timeout, erros, health, serialização/desserialização,
-correlation. Transporte de baixo nível pronto para `/api/health`,
-`/v1/chat/completions` e `/v1/search` (`health()`, `chat_completions()`,
-`search()`) -- validado por testes de contrato reais contra
-`diegosouzapw/omniroute:3.8.50` rodando localmente por digest (ver ADR
-0011/0012/0013). Ainda sem regras de negócio, sem adapters de AI/Search
-(quem monta o payload de negócio e escolhe modelo/provider é 118C/118D),
-sem configuração de Gemini/Groq/OpenRouter, sem o agente Claudião, sem
-deployment em produção.
-
-**TASK-118C** (Central AI Gateway, concluída): contrato neutro, `AIManager`,
-policy, adapter OmniRoute, usage/tracing, hard cap certificado de `max_tokens`
-e `POST /v1/ai/generate` (ADR 0014).
-
-**TASK-118D** (Central Web Search Gateway, concluída): contrato neutro,
-`SearchManager`, policy por aplicação/purpose/classe, adapter OmniRoute,
-usage/tracing, semântica explícita de fallback e `POST /v1/search` (ADR 0015).
-A migração do Market Research foi entregue posteriormente pela 118G.
-
-**TASK-118E** (Security, Registry & Observability): `gg_oferta` autenticado por
-credencial Bearer em arquivo e autorizado para AI/Search; `claudiao` continua
-`RESERVED`, sem credential e sem scopes. Quotas por aplicação/capability são
-aplicadas antes do manager/upstream. Métricas e logs estruturados agregam
-application/service/purpose, IDs, provider/model, latência, fallback e usage
-sem registrar prompts, queries ou segredos (ADR 0016).
-
-**TASK-118F/118G** (concluídas e publicadas): messages tipadas retrocompatíveis,
-integração AI no GG Oferta e Search via SearXNG, com enriquecimento Firecrawl
-separado. Commits Core: `95b6996` (118F) e `3578f2b` (118G); GG Oferta:
-`c383fdc` (118F) e `80dc135` (118G). Publicação de código não equivale a deploy.
-
-**TASK-118H** (validação DEV concluída e aprovada): restart real do Core,
-recuperação de dependências, rollback AI/Search e runbook operacional. Ver
-`docs/task-118h-rollout-resilience.md`. Nenhum rollout PROD autorizado.
-
-## Estrutura
+## Arquitetura
 
 ```text
-src/cesar_core/
-  api/            aplicação FastAPI e rotas HTTP
-  applications/   ApplicationId, ApplicationState, ApplicationContext, registry
-  ai/             contrato, policy, manager e adapter OmniRoute de AI
-  search/         contrato, policy, manager e adapter OmniRoute de Search
-  omniroute/      client HTTP de baixo nível (health, chat completions, search)
-  policy/         service_class, cost_policy, requirements
-  security/       autenticação, credentials, autorização e quotas
-  telemetry/      IDs, tracing estruturado e métricas Prometheus
-  health/         lógica de health/readiness/capabilities
-  config/         settings do processo
+Consumers (por exemplo, GG Oferta)
+    ↓ Bearer próprio da aplicação
+César Core
+    ├── Redis — quota compartilhada/durável
+    └── OmniRoute — gateway upstream
+          ├── AI providers / target configurado
+          └── SearXNG — General Web Search
 ```
 
-`ai/` e `search/` nunca compartilham uma interface de provider: cada um tem a
-sua (`ai/provider.py`, `search/provider.py`). Os adapters vivem em
-`ai/providers/omniroute.py` e `search/providers/omniroute.py`; ambos usam o
-transporte de `omniroute/client.py` -- ver ADR 0006, 0014 e 0015.
+Uma codebase e duas execuções oficiais: **Docker recomendado para operação**;
+Python/venv suportado para desenvolvimento e debug. O container instala o mesmo
+pacote de `src/cesar_core`, sem fork ou implementação paralela. São quatro
+imagens separadas; o Core não contém nem modifica o OmniRoute.
 
-Cada domínio (`ai/`, `search/`) expõe duas camadas de contrato (ADR
-0010): `AIRequestPayload`/`SearchRequestPayload` é o DTO HTTP público
-(sem identidade do chamador no corpo); `AIRequest`/`SearchRequest` é a
-requisição interna, criada pelo Core combinando esse payload com um
-`ApplicationContext` já resolvido. `ApplicationContext` e `Requirements`
-também têm fronteira própria (ADR 0009): contexto é quem/por quê/
-tracing, requirements é capacidade/qualidade/custo.
+## Recursos e limites
 
-## Desenvolvimento local
+- Bearer obrigatório em AI/Search; identidade derivada da credencial, não do body.
+- Registry: `gg_oferta=ACTIVE`; `claudiao=RESERVED`, sem credencial funcional.
+- Autorização por capability e policies por aplicação/purpose/service class.
+- Classes economy/standard/quality; `FREE_ONLY` bloqueia targets declarados pagos.
+- Quota AI/Search pré-upstream, atômica, compartilhada e sem fallback em memória.
+- Readiness autenticada, métricas Prometheus, request/correlation/upstream IDs.
+- AI: exatamente um de `prompt` ou `messages`; roles system/user/assistant e
+  ordem preservadas até o OmniRoute. Sem streaming/tools/multimodal nesta versão.
+- `max_tokens` exige capability de enforcement certificada para target fixo;
+  validação fail-closed da resposta permanece. Alias dinâmico não pode declarar
+  essa garantia. Resposta sem texto válido não é aceita como geração bem-sucedida.
+- Search: títulos, URLs, snippets, usage, provider, cache e erros normalizados.
+  Cache vem do OmniRoute; não é cache persistido no Core.
+- Lista vazia é sucesso. Fallback segue policy/provider, não “resultado ruim”.
+  O Core não implementa Firecrawl scrape nem estratégia de Market Research.
+- `context7` é documentação técnica (`technical_documentation`), não Web Search
+  geral. SearXNG é o target geral certificado para `market_research`.
+- A release não fornece cadastro genérico de consumidores: a distribuição
+  pública configurável é uma evolução futura, não uma feature desta versão.
 
-```bash
-pip install -e ".[dev]"
-pytest -m "not contract"   # suíte padrão, não depende de infra viva
-ruff check .
+## Execução Docker / Compose (recomendada)
+
+Pré-requisitos: Docker Engine/Desktop com Linux containers, Compose v2 e
+linux/amd64; acesso autorizado ao repositório e ao package **privado** no GHCR.
+Não é necessário Python nem build no servidor.
+
+1. Obtenha `compose.yaml`, `deploy/` e `.env.example` da tag desejada.
+2. Copie `.env.example` para `.env`; ele contém apenas configuração e caminhos.
+3. Crie os arquivos locais de credencial descritos em “Secrets”. Não os versione.
+4. Autentique Docker no GHCR com credencial autorizada de leitura de packages.
+5. Prepare o OmniRoute pela interface oficial conforme o
+   [primeiro boot](docs/deployment/docker.md). Ative gateways só após configurar
+   suas chaves/targets.
+6. Execute:
+
+```sh
+docker compose pull
+docker compose up -d
+docker compose ps
+curl http://127.0.0.1:8100/health
+curl http://127.0.0.1:8100/ready
 ```
 
-Testes de contrato reais contra o OmniRoute (`pytest -m contract`) só
-rodam quando `.secrets/omniroute_api_key` existe; sem isso, são pulados
-automaticamente -- ver ADR 0011.
+O Compose usa `ghcr.io/jhonnatancesar/cesar-core:1.0.0`, não `build:`.
+Para deploy reproduzível, defina `CESAR_CORE_IMAGE` com o digest publicado pelo
+workflow: `ghcr.io/jhonnatancesar/cesar-core@sha256:<digest>`.
+A rede backend é interna; OmniRoute/SearXNG usam a rede egress para providers.
+Core também usa uma bridge ingress para a publicação da porta no host; essa
+bridge não é uma garantia de bloqueio de saída do Core.
+Somente Core é publicado, em `127.0.0.1:8100`. Redis/SearXNG não têm porta no host.
+Não usar localhost para comunicação entre containers: os nomes são
+`redis`, `omniroute` e `searxng`.
 
-A configuração de exemplo está em `.env.example`. Nenhuma chave deve ser
-colocada no `.env`: os campos `*_FILE` apontam para arquivos locais fora do
-Git. A chamada aos gateways exige `Authorization: Bearer <credential>`; o Core
-deriva `application_id` dessa credencial e ignora qualquer tentativa de
-declará-lo no payload ou em `X-Application-Id`.
+Para rodar apenas o container Core, conecte-o à rede das dependências, passe as
+mesmas variáveis de runtime e monte os três arquivos de credencial em read-only.
+O Compose é o caminho suportado mais simples; não embutir credenciais na imagem.
+O acesso remoto exige proxy/TLS e decisão de rede própria, não incluídos neste
+rollout. Ver [operação Docker](docs/deployment/docker.md).
 
-Para habilitar o endpoint AI, configure ao menos:
+## Execução nativa (DEV)
 
-```env
-CESAR_CORE_AI_ENABLED=true
-CESAR_CORE_AI_DEFAULT_MODEL=<modelo disponível no OmniRoute>
-CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE=.secrets/ggoferta-ai
-CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE=.secrets/ggoferta-core-client
+Use Python oficial 3.12+; a baseline validada usa 3.14.6.
+
+```sh
+python -m venv .venv
+# Linux/macOS:
+. .venv/bin/activate
+# Windows PowerShell, em vez da linha anterior:
+# .\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+python -m uvicorn cesar_core.api.app:app --host 127.0.0.1 --port 8100
 ```
 
-O modelo não é aceito no body público: ele é escolhido pela policy interna.
+Configure dependências reais acessíveis ao host e os mesmos arquivos `*_FILE`.
+Não aponte o host para nomes DNS exclusivos da rede Docker.
+O modo nativo usa o mesmo registry, auth, policies, Redis e adapters.
 
-Na TASK-118F, AI aceita **exatamente um** formato de entrada (além de
-`requirements` e do `max_tokens` opcional): `{"prompt":"texto"}` ou
-`{"messages":[{"role":"system","content":"instrução"},{"role":"user","content":"texto"}]}`.
-`prompt` permanece compatível e vira uma mensagem `user`, sem alterar seu texto.
-`messages` aceita somente `system`, `user` e `assistant`, com conteúdo textual
-não vazio, preservando roles e ordem até o OmniRoute, sem concatenação.
-Ambos, nenhum ou mensagens inválidas retornam 400 `ai_invalid_request`, antes
-do upstream, sem ecoar conteúdo. Auth, quota e policies continuam obrigatórias.
-`ECONOMY_MODEL`, `STANDARD_MODEL` e `QUALITY_MODEL` permitem overrides por
-classe de serviço. `FREE_ONLY` rejeita um alvo marcado como pago.
+## Configuração
 
-Para habilitar o endpoint Search, configure ao menos:
+O arquivo [.env.example](.env.example) lista as opções nativas. O Compose mapeia
+explicitamente a configuração operacional abaixo; não lê secrets do build.
 
-```env
-CESAR_CORE_SEARCH_ENABLED=true
-CESAR_CORE_SEARCH_DEFAULT_PROVIDER=
-CESAR_CORE_SEARCH_TECHNICAL_DOCUMENTATION_PROVIDER=context7
-CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE=.secrets/ggoferta-search
-CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE=.secrets/ggoferta-core-client
+| Variável | Papel |
+|---|---|
+| `CESAR_CORE_IMAGE` | Tag ou digest da imagem; padrão GHCR 1.0.0 |
+| `CESAR_CORE_PUBLISHED_PORT` | Porta host loopback, padrão 8100 |
+| `CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE` | Bearer aplicação → Core |
+| `CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE` | Arquivo de credencial AI upstream |
+| `CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE` | Arquivo distinto de credencial Search upstream |
+| `CESAR_CORE_SEARXNG_SECRET_FILE` | Segredo interno do servidor SearXNG |
+| `CESAR_CORE_AI_ENABLED` / `SEARCH_ENABLED` | Opt-in; padrões false |
+| `CESAR_CORE_AI_DEFAULT_MODEL` | Target AI fixo configurado no OmniRoute |
+| `CESAR_CORE_AI_MODEL_ENFORCES_MAX_TOKENS` | Somente true após certificação real |
+| `CESAR_CORE_AI_MAX_TOKENS_LIMIT` | Cap da policy, padrão 4096 |
+| `CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT` | Cap de saída, padrão 20 |
+| `CESAR_CORE_SECURITY_AI_REQUESTS_PER_MINUTE` | Quota AI, padrão 60 |
+| `CESAR_CORE_SECURITY_SEARCH_REQUESTS_PER_MINUTE` | Quota Search, padrão 60 |
+| `CESAR_CORE_SECURITY_QUOTA_NAMESPACE` | Namespace estável, exclusivo por ambiente |
+| `CESAR_CORE_OMNIROUTE_TIMEOUT_SECONDS` | Timeout upstream, padrão Compose 90s |
+
+No nativo também existem `OMNIROUTE_BASE_URL`, `SECURITY_QUOTA_REDIS_URL`,
+`SEARCH_DEFAULT_PROVIDER`, `SEARCH_PROVIDER_HEALTH_URL` e overrides por classe,
+todos com prefixo `CESAR_CORE_`. No Compose, os endereços internos e o target
+SearXNG são definidos pela topologia oficial. Não marque target pago como FREE.
+AI e Search não recebem modelo/provider escolhido pelo body público.
+
+## Secrets e segurança
+
+Arquivos locais ignorados pelo Git:
+
+- `.secrets/ggoferta-core-client`: segredo exclusivo do consumidor → Core.
+- `.secrets/ggoferta-ai` e `.secrets/ggoferta-search`: chaves fornecidas pelo
+  OmniRoute, independentes por capability e sem escopo administrativo.
+- `.secrets/searxng`: valor aleatório forte para o servidor SearXNG.
+
+Crie valores fora do terminal compartilhado/logs, com permissões restritas.
+O consumidor recebe sua própria cópia da credencial Core; não reutilize chave
+upstream. Nenhuma credencial Claudião deve ser criada. No Linux, arquivos do Core
+precisam ser legíveis pelo UID/GID 10001, sem tornar o diretório público.
+Compose secrets são mounts read-only, não um cofre criptografado.
+O wrapper SearXNG lê seu arquivo e usa o mecanismo oficial `SEARXNG_SECRET`;
+a imagem oficial não é reconstruída. O Core roda como usuário não-root,
+filesystem read-only no Compose, sem capabilities Linux e sem Docker socket.
+
+## Redis
+
+Redis guarda **somente o estado de quota/janela do Core**, não produtos ou
+missões de consumidores. A janela de 60s começa na primeira admissão. Excedente
+não incrementa nem estende TTL e retorna 429 + Retry-After antes do upstream.
+Restart Core não reinicia o saldo; instâncias compartilham Redis, namespace e policy.
+
+[redis.conf](deploy/redis/redis.conf) fixa AOF, `appendfsync always`,
+`no-appendfsync-on-rewrite no`, `noeviction` e volume persistente. Core confere
+CONFIG GET/INFO antes de operar; nunca CONFIG SET. PING sozinho não prova
+durabilidade. Mantemos always para não aceitar janela deliberada de perda de
+admissões confirmadas em desastre Redis/host. Não é necessário apenas para crash
+do Core quando Redis permanece vivo. Limites de hardware/failover e migração:
+[ADR 0018](docs/adr/0018-persistent-quota-recovery.md).
+
+## OmniRoute e SearXNG
+
+OmniRoute **3.8.50 oficial**, fixado no digest certificado
+`sha256:085c57adf499a8aaa9f35ccde95c0df9c11bd9ecd18d6c9edbf3b68b8079ba9d`.
+Configuração e credenciais dos providers ficam no volume/runtime do OmniRoute.
+AI usa o target configurado; Search usa uma conexão `searxng-search` com
+`providerSpecificData.baseUrl=http://searxng:8080/search`.
+
+SearXNG tem JSON habilitado e acesso apenas interno. Motores externos podem
+retornar CAPTCHA, rate limit ou ficar indisponíveis. `max_results` é garantido
+na saída OmniRoute/Core; SearXNG pode adquirir mais resultados internamente.
+Não confundir esse limite com cap da aquisição externa.
+
+## Health e observabilidade
+
+Não há dashboard administrativo próprio. A interface interativa da API está
+em `/docs` (Swagger) e a referência em `/redoc`, na mesma porta do Core.
+AI/Search continuam exigindo Bearer; o Swagger não contorna auth ou quota.
+
+| Superfície | Significado |
+|---|---|
+| `GET /health` | Processo vivo, não verifica dependências |
+| `GET /ready` | `ok` ou `degraded` para gateways configurados |
+| `GET /v1/capabilities` | Inventário, não certificação de prontidão |
+| `GET /metrics` | Prometheus; contadores operacionais por processo |
+| `POST /v1/ai/generate` | Geração tipada autenticada |
+| `POST /v1/search` | Busca autenticada e normalizada |
+
+Redis inadequado: `quota_store_misconfigured`; indisponível/não verificável:
+`quota_store_unavailable`. Gateways retornam 503; readiness informa o motivo
+seguro. Quota esgotada não torna liveness/readiness inválidas. Gateways desligados
+não exigem essas dependências. Healthcheck Docker testa o JSON de readiness,
+não apenas HTTP 200. Não há dependência rígida de startup: Core pode iniciar
+degraded e recuperar automaticamente. Logs vão a stdout/stderr, sem payload ou
+secrets; métricas reiniciam com o processo, quota não.
+
+## Atualização e rollback
+
+Registre o digest atual antes de atualizar. Troque `CESAR_CORE_IMAGE`, faça
+`docker compose pull cesar-core` e `docker compose up -d cesar-core`.
+Valide readiness e contracts. Rollback usa o digest anterior e os mesmos
+volumes/namespace/configuração compatível. Não remova volumes nem resete quota.
+A 1.0.0 é a primeira release: não existe versão Docker anterior presumidamente
+compatível. Backup/restore e troubleshooting estão no runbook.
+
+## Desenvolvimento e testes
+
+```sh
+python -m pytest -m "not contract"
+python -m ruff check .
+git diff --check
+python scripts/export_openapi.py
+docker compose -f compose.yaml -f deploy/compose.dev.yaml build cesar-core
 ```
 
-O provider não é aceito no body público. `ECONOMY_PROVIDER`,
-`STANDARD_PROVIDER` e `QUALITY_PROVIDER` permitem overrides por classe;
-`FREE_ONLY` rejeita alvo pago e `MAX_RESULTS_LIMIT` é aplicado antes do
-upstream. Uma lista vazia é resposta válida e não dispara retry/fallback.
-`context7` é target gratuito certificado somente para o purpose
-`technical_documentation`; seu corpus é focado em documentação de bibliotecas
-e ele não é o default de Web Search geral. Enquanto `DEFAULT_PROVIDER` e os
-overrides de classe estiverem vazios, busca geral permanece `not_configured`.
-`duckduckgo-free` está bloqueado por anti-bot no ambiente local validado;
-SearXNG foi certificado em DEV na 118G para `market_research`, mas requer
-instância local com JSON habilitado e `providerSpecificData.baseUrl` no OmniRoute.
-Para habilitar o alvo, configure também `CESAR_CORE_SEARCH_PROVIDER_HEALTH_URL`;
-o probe de prontidão verifica essa dependência sem executar busca externa.
-Sem serviço/configuração permanente, o default continua vazio. Ollama Search
-continua sem credencial configurada. Ver ADR 0017.
+Contracts reais exigem infraestrutura e credenciais DEV; mocks não substituem
+AI/Search reais. Há 22 contracts baseline e nove de quota/recovery/durabilidade.
+Os harnesses históricos 118H são DEV Windows e nunca devem apontar para PROD.
+[Contratos](contracts/README.md) e [validação 118H](docs/task-118h-rollout-resilience.md).
+[Validação da distribuição 1.0.0](docs/deployment/release-1.0.0-validation.md).
+Locks universais em `requirements/` têm versões e hashes; fontes em
+`deploy/*requirements.in`. Atualizar lock exige nova validação nativa/container.
 
-`max_results` limita obrigatoriamente a saída. SearXNG pode adquirir mais
-resultados internamente: OmniRoute corta a resposta e o Core garante o cap final.
-Isso não é enforcement de aquisição externa nem um bug do provider.
+## Release privada
 
-`/v1/capabilities` distingue `search_general_web` de
-`search_technical_documentation`. O status agregado `search` fica disponível
-quando ao menos um target Search está configurado, sem afirmar que todos os
-purposes possuem cobertura.
+A tag anotada `v1.0.0` identifica o código. Tags Git não são movidas/recriadas.
+O workflow `container-release.yml` dispara em SemVer estável `v*.*.*`, valida
+a versão, builda linux/amd64 e publica usando GITHUB_TOKEN, sem PAT de publicação.
+GHCR publica `1.0.0`, `1.0`, `1`, `latest` e `sha-<commit completo>`.
+Tags de imagem são convenientes; **digest é a referência imutável**.
+O package deve permanecer privado. Se uma tag falhar, não movê-la: decidir
+release corretiva em novo commit/versão. A edição pública é uma tarefa futura.
 
-`/v1/capabilities` também informa `application_registry`,
-`application_authentication` e `metrics`, sem listar credenciais nem expor o
-consumidor reservado. `/ready` degrada se AI/Search estiver habilitado sem uma
-credencial de aplicação legível ou sem a credencial OmniRoute específica da
-capability. `/metrics` usa o formato de exposição Prometheus e somente labels
-operacionais de baixa cardinalidade. A quota é uma fixed window de 60 segundos
-por aplicação/capability, compartilhada em Redis e persistida em AOF. Restart do
-Core não reinicia o saldo; réplicas devem usar o mesmo namespace, Redis e limites.
-Excesso retorna `429 quota_exceeded` antes do upstream. Armazenamento inacessível
-retorna `503 quota_store_unavailable`; configuração incompatível retorna
-`503 quota_store_misconfigured`, sem consumo upstream nem fallback em memória.
-`/ready` fica `degraded` com `reason` contendo esse código; saldo
-esgotado não degrada readiness nem liveness. Ver [ADR 0018](docs/adr/0018-persistent-quota-recovery.md).
+## Projetos e serviços utilizados
 
-Reutilizar Redis da plataforma com volume persistente, `appendonly yes`,
-`appendfsync always`, `no-appendfsync-on-rewrite no` e `maxmemory-policy noeviction`.
-O Core verifica esses requisitos, não reconfigura o servidor. Configurar
-`CESAR_CORE_SECURITY_QUOTA_REDIS_URL` sem segredo e, se autenticado,
-`CESAR_CORE_SECURITY_QUOTA_REDIS_PASSWORD_FILE`; usar namespace estável exclusivo
-por ambiente. O Redis original deste DEV não foi modificado: a prova usa uma
-instância descartável da mesma imagem. Não habilitar gateways em outro ambiente
-sem validar esses requisitos. A disponibilidade é fail-closed, não HA automática.
+URLs confirmadas nas imagens/documentação oficiais; não são forks do Core.
 
-Para subir a API localmente:
+| Projeto | Função | Repositório oficial / baseline |
+|---|---|---|
+| OmniRoute | Gateway AI/Search | [diegosouzapw/OmniRoute](https://github.com/diegosouzapw/OmniRoute), 3.8.50 / digest acima |
+| Redis | Quota durável | [redis/redis](https://github.com/redis/redis), 8.6.5-alpine; digest no Compose |
+| SearXNG | General Web Search | [searxng/searxng](https://github.com/searxng/searxng), 2026.9.3-a1144dda3; digest no Compose |
+| FastAPI | API HTTP | [fastapi/fastapi](https://github.com/fastapi/fastapi), 0.141.1 |
+| Uvicorn | Servidor ASGI | [Kludex/uvicorn](https://github.com/Kludex/uvicorn), 0.52.4 |
+| Pydantic | DTOs/configuração | [pydantic/pydantic](https://github.com/pydantic/pydantic), 2.13.5 |
+| redis-py | Cliente Redis | [redis/redis-py](https://github.com/redis/redis-py), 6.4.0 |
 
-```bash
-uvicorn cesar_core.api.app:app --host 127.0.0.1 --port 8100
-```
-
-## Documentação
-
-- `docs/adr/` -- decisões arquiteturais e suas atualizações de implementação.
-- `contracts/` -- OpenAPI exportado da aplicação FastAPI.
-- `deployment/` -- topologia pretendida de implantação (container-to-container,
-  loopback-only); o exemplo ainda não é um deployment executável.
+Fontes de confirmação: labels OCI das imagens OmniRoute/SearXNG;
+[docs SearXNG](https://docs.searxng.org/admin/installation-docker.html),
+[FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://uvicorn.dev/) e
+[redis-py](https://redis.readthedocs.io/). Dependências Python transitivas e seus
+avisos de licença acompanham os pacotes instalados, sem relicenciamento.
 
 ## Licença
 
-Todos os direitos reservados. Ver [LICENSE](LICENSE). Componentes externos
-mantêm suas próprias licenças. Esta distribuição não concede licença open source.
+**Todos os direitos reservados.** Ver [LICENSE](LICENSE).
+Distribuição privada; nenhuma licença open source é concedida para o Core.
+Componentes externos mantêm suas próprias licenças.

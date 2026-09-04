@@ -1,0 +1,4 @@
+# Temporary loopback access for initial official OmniRoute configuration.
+services:
+  omniroute:
+    ports: ["127.0.0.1:20128:20128"]

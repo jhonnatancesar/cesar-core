@@ -1,0 +1,6 @@
+services:
+  cesar-core:
+    image: cesar-core:dev
+    build:
+      context: .
+      dockerfile: Dockerfile

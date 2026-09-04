@@ -1,6 +1,6 @@
 [project]
 name = "cesar-core"
-version = "0.1.0"
+version = "1.0.0"
 description = "César Core -- infraestrutura central multi-aplicação de IA, Web Search e políticas de uso."
 license = "LicenseRef-Proprietary"
 license-files = ["LICENSE"]
@@ -22,7 +22,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.29.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

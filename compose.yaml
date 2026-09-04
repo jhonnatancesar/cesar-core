@@ -1,0 +1,102 @@
+name: cesar-core
+services:
+  cesar-core:
+    image: ${CESAR_CORE_IMAGE:-ghcr.io/jhonnatancesar/cesar-core:1.0.0}
+    platform: linux/amd64
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 40s
+    ports: ["127.0.0.1:${CESAR_CORE_PUBLISHED_PORT:-8100}:8100"]
+    networks: [backend, ingress]
+    environment:
+      CESAR_CORE_OMNIROUTE_BASE_URL: http://omniroute:20128
+      CESAR_CORE_OMNIROUTE_TIMEOUT_SECONDS: ${CESAR_CORE_OMNIROUTE_TIMEOUT_SECONDS:-90}
+      CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE: /run/secrets/omniroute_ai
+      CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE: /run/secrets/omniroute_search
+      CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE: /run/secrets/application
+      CESAR_CORE_SECURITY_QUOTA_REDIS_URL: redis://redis:6379/0
+      CESAR_CORE_SECURITY_QUOTA_NAMESPACE: ${CESAR_CORE_SECURITY_QUOTA_NAMESPACE:-cesar-core:quota:v1}
+      CESAR_CORE_SECURITY_AI_REQUESTS_PER_MINUTE: ${CESAR_CORE_SECURITY_AI_REQUESTS_PER_MINUTE:-60}
+      CESAR_CORE_SECURITY_SEARCH_REQUESTS_PER_MINUTE: ${CESAR_CORE_SECURITY_SEARCH_REQUESTS_PER_MINUTE:-60}
+      CESAR_CORE_AI_ENABLED: ${CESAR_CORE_AI_ENABLED:-false}
+      CESAR_CORE_AI_DEFAULT_MODEL: ${CESAR_CORE_AI_DEFAULT_MODEL:-}
+      CESAR_CORE_AI_MODEL_ENFORCES_MAX_TOKENS: ${CESAR_CORE_AI_MODEL_ENFORCES_MAX_TOKENS:-false}
+      CESAR_CORE_AI_MAX_TOKENS_LIMIT: ${CESAR_CORE_AI_MAX_TOKENS_LIMIT:-4096}
+      CESAR_CORE_SEARCH_ENABLED: ${CESAR_CORE_SEARCH_ENABLED:-false}
+      CESAR_CORE_SEARCH_DEFAULT_PROVIDER: searxng-search
+      CESAR_CORE_SEARCH_PROVIDER_HEALTH_URL: http://searxng:8080/healthz
+      CESAR_CORE_SEARCH_TECHNICAL_DOCUMENTATION_PROVIDER: context7
+      CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT: ${CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT:-20}
+    secrets: [application, omniroute_ai, omniroute_search]
+
+  redis:
+    image: redis:8.6.5-alpine@sha256:cd218f4b106a332c5c992e38a9480bfb9d7e9f8f7b0ec9a0023bfa36d9a408f9
+    restart: unless-stopped
+    command: [redis-server, /usr/local/etc/redis/redis.conf]
+    networks: [backend]
+    volumes:
+      - ./deploy/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - quota-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  omniroute:
+    # Official certified 3.8.50; never rebuild/customize this image.
+    image: diegosouzapw/omniroute@sha256:085c57adf499a8aaa9f35ccde95c0df9c11bd9ecd18d6c9edbf3b68b8079ba9d
+    platform: linux/amd64
+    restart: unless-stopped
+    networks: [backend, egress]
+    environment:
+      REQUIRE_API_KEY: "true"
+      QUOTA_STORE_DRIVER: sqlite
+      OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS: "true"
+    volumes: [omniroute-data:/app/data]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:20128/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+  searxng:
+    image: searxng/searxng@sha256:3602e6ddbeba037f5d800d1ed9d296a8b93c9f5b3cf9d05fa179d0e766dd59a1
+    restart: unless-stopped
+    networks: [backend, egress]
+    entrypoint: [/bin/sh, /opt/cesar/searxng-entrypoint.sh]
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./deploy/searxng/entrypoint.sh:/opt/cesar/searxng-entrypoint.sh:ro
+    secrets: [searxng]
+    healthcheck:
+      test: [CMD, wget, --quiet, --spider, http://127.0.0.1:8080/healthz]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+networks:
+  backend:
+    internal: true
+  # Host port publishing requires a non-internal bridge on Docker Desktop.
+  # No dependency joins ingress; only the Core loopback port is published.
+  ingress: {}
+  egress: {}
+volumes:
+  quota-data: {}
+  omniroute-data: {}
+secrets:
+  application:
+    file: ${CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE:-./.secrets/ggoferta-core-client}
+  omniroute_ai:
+    file: ${CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE:-./.secrets/ggoferta-ai}
+  omniroute_search:
+    file: ${CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE:-./.secrets/ggoferta-search}
+  searxng:
+    file: ${CESAR_CORE_SEARXNG_SECRET_FILE:-./.secrets/searxng}

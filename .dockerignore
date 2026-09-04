@@ -1,0 +1,11 @@
+# Allowlist: nothing private/local can enter the build context.
+**
+!pyproject.toml
+!LICENSE
+!src/
+!src/cesar_core/
+!src/cesar_core/**
+!requirements/
+!requirements/*.lock
+**/__pycache__/**
+**/*.pyc

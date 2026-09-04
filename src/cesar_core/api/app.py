@@ -7,6 +7,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from cesar_core import __version__
 from cesar_core.api.routes import ai, capabilities, health, metrics, search
 from cesar_core.security.contracts import SecurityErrorDetail, SecurityErrorResponse
 from cesar_core.security.errors import (
@@ -21,7 +22,7 @@ from cesar_core.telemetry.tracing import trace_http_completion
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="César Core", version="0.1.0")
+    app = FastAPI(title="César Core", version=__version__)
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(request: Request, exc: RequestValidationError):

@@ -1,7 +1,6 @@
-# Exemplo conceitual da topologia pretendida do César Core.
-# O repositório ainda não contém Dockerfile nem deployment de produção;
-# este arquivo documenta rede e publicação loopback-only. Não publicar a
-# API em 0.0.0.0 sem uma decisão explícita de segurança.
+# Exemplo histórico anterior à release 1.0.0; NÃO é o deploy oficial.
+# Usar ../compose.yaml e ../docs/deployment/docker.md para a stack suportada.
+# Mantido apenas como referência da topologia externa anterior.
 
 services:
   cesar-core:
