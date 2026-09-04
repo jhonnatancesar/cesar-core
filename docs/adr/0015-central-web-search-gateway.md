@@ -4,6 +4,11 @@
 
 Aceito (TASK-118D, primeira fatia vertical).
 
+Atualização 118G: ADR 0017 certifica SearXNG em DEV e formaliza `max_results`
+como limite obrigatório de saída. As descrições abaixo de falta de provider
+geral representam o estado histórico da 118D. A configuração permanente
+continua desligada, sem deploy de SearXNG.
+
 ## Contexto
 
 A TASK-118B entregou o transporte HTTP para `/v1/search`, mas não podia

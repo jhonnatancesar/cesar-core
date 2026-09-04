@@ -27,7 +27,15 @@ class SearchRequestPayload(BaseModel):
 
     requirements: Requirements
     query: str = Field(min_length=1, max_length=500)
-    max_results: int = Field(default=5, ge=1, le=100)
+    max_results: int = Field(
+        default=5,
+        ge=1,
+        le=100,
+        description=(
+            "Limite obrigatório dos resultados expostos. Encaminhado ao upstream; "
+            "não garante limite de aquisição externa quando o provider não o suporta."
+        ),
+    )
 
     @field_validator("query")
     @classmethod

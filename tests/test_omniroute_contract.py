@@ -36,6 +36,7 @@ Superfícies reais:
 """
 
 import json
+import os
 import socket
 from pathlib import Path
 from uuid import uuid4
@@ -137,7 +138,11 @@ async def test_b_search_against_real_omniroute_using_the_free_fallback_provider(
         correlation_id="cesar-core-contract-search",
     )
     assert response.status_code == 200
-    assert response.body["provider"] == "duckduckgo-free"
+    expected = os.environ.get(
+        "CESAR_CORE_CONTRACT_AUTO_SEARCH_PROVIDER", "duckduckgo-free"
+    )
+    assert expected in {"duckduckgo-free", "searxng-search"}
+    assert response.body["provider"] == expected
     assert isinstance(response.body["results"], list)
     assert response.upstream_request_id
     await client.aclose()

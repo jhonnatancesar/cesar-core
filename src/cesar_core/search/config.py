@@ -19,6 +19,7 @@ class SearchConfig(BaseSettings):
     standard_provider: str | None = None
     quality_provider: str | None = None
     technical_documentation_provider: str | None = None
+    provider_health_url: str | None = None
     provider_is_paid: bool = False
     max_results_limit: int = Field(default=20, ge=1, le=100)
 
@@ -46,5 +47,7 @@ class SearchConfig(BaseSettings):
             ServiceClass.STANDARD: self.standard_provider,
             ServiceClass.QUALITY: self.quality_provider,
         }[service_class]
-        selected = configured or self.default_provider
-        return selected.strip() if selected and selected.strip() else None
+        selected = (configured or self.default_provider or "").strip()
+        if selected == "searxng-search" and not self.provider_health_url:
+            return None
+        return selected or None

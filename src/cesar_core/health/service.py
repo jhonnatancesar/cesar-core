@@ -3,6 +3,8 @@
 Ver ADR 0008 para a semântica exata de /health, /ready e /v1/capabilities.
 """
 
+import httpx
+
 from cesar_core.ai.config import AIConfig
 from cesar_core.health.models import (
     CapabilitiesResponse,
@@ -137,6 +139,10 @@ async def probe_readiness() -> ReadinessStatus:
 
     try:
         authentication_enforced = True
+        if search_config.has_general_web_provider and search_config.provider_health_url:
+            async with httpx.AsyncClient(timeout=3, trust_env=False, follow_redirects=False) as probe:
+                response = await probe.get(search_config.provider_health_url)
+                response.raise_for_status()
         for capability, client in clients:
             await client.health()
             if capability == "ai":
@@ -151,7 +157,7 @@ async def probe_readiness() -> ReadinessStatus:
                     and await client.search_authentication_enforced()
                     and await client.search_credential_accepted()
                 )
-    except (OmniRouteError, OSError):
+    except (OmniRouteError, OSError, httpx.HTTPError, ValueError):
         return get_readiness(
             ai_config=ai_config,
             search_config=search_config,

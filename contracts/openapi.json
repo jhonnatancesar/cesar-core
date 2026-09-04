@@ -766,6 +766,7 @@
             "maximum": 100.0,
             "minimum": 1.0,
             "title": "Max Results",
+            "description": "Limite obrigatório dos resultados expostos. Encaminhado ao upstream; não garante limite de aquisição externa quando o provider não o suporta.",
             "default": 5
           }
         },

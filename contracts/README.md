@@ -1,5 +1,9 @@
 # Contratos
 
+118G / ADR 0017: `max_results` limita a saída; SearXNG certificado para
+`market_research` pode adquirir mais resultados antes do corte no OmniRoute.
+Core garante também o cap final. Vazio continua sucesso, sem fallback.
+
 `openapi.json` é gerado a partir da aplicação FastAPI real (nunca escrito à
 mão). Para regenerar após uma mudança de contrato:
 

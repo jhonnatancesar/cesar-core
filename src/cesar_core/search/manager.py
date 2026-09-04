@@ -19,4 +19,9 @@ class SearchManager:
         started_at = perf_counter()
         response = await self._provider.search(request, target=target)
         latency_ms = (perf_counter() - started_at) * 1000
-        return response.model_copy(update={"latency_ms": latency_ms})
+        return response.model_copy(
+            update={
+                "latency_ms": latency_ms,
+                "results": response.results[: request.max_results],
+            }
+        )

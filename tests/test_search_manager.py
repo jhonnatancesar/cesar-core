@@ -80,3 +80,14 @@ async def test_manager_propagates_normalized_provider_error() -> None:
     with pytest.raises(SearchUpstreamUnavailableError) as exc_info:
         await _manager(error).search(_request())
     assert exc_info.value is error
+
+
+async def test_final_cap_even_when_provider_returns_extra_results() -> None:
+    from cesar_core.search.contracts import SearchResult
+
+    response = _response().model_copy(update={"results": [
+        SearchResult(title=str(i), url="https://example.test", position=i + 1)
+        for i in range(10)
+    ]})
+    result = await _manager(response).search(_request())
+    assert len(result.results) == 5

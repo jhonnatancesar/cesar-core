@@ -156,7 +156,16 @@ upstream. Uma lista vazia é resposta válida e não dispara retry/fallback.
 e ele não é o default de Web Search geral. Enquanto `DEFAULT_PROVIDER` e os
 overrides de classe estiverem vazios, busca geral permanece `not_configured`.
 `duckduckgo-free` está bloqueado por anti-bot no ambiente local validado;
-SearXNG e Ollama Search exigem configuração externa ainda inexistente.
+SearXNG foi certificado em DEV na 118G para `market_research`, mas requer
+instância local com JSON habilitado e `providerSpecificData.baseUrl` no OmniRoute.
+Para habilitar o alvo, configure também `CESAR_CORE_SEARCH_PROVIDER_HEALTH_URL`;
+o probe de prontidão verifica essa dependência sem executar busca externa.
+Sem serviço/configuração permanente, o default continua vazio. Ollama Search
+continua sem credencial configurada. Ver ADR 0017.
+
+`max_results` limita obrigatoriamente a saída. SearXNG pode adquirir mais
+resultados internamente: OmniRoute corta a resposta e o Core garante o cap final.
+Isso não é enforcement de aquisição externa nem um bug do provider.
 
 `/v1/capabilities` distingue `search_general_web` de
 `search_technical_documentation`. O status agregado `search` fica disponível
