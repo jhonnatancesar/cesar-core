@@ -53,13 +53,21 @@ def configure(gg: Path) -> None:
         AISHOPPING_CESAR_CORE_MAX_TOKENS="512",
         AISHOPPING_FIRECRAWL_API_KEY_FILE=str(gg / ".secrets/firecrawl_api_key"),
     )
+    from cesar_core.admin.config import AdminConfig
     from cesar_core.ai.config import AIConfig
     from cesar_core.config.settings import Settings
     from cesar_core.omniroute.config import OmniRouteConfig
     from cesar_core.search.config import SearchConfig
     from cesar_core.security.config import SecurityConfig
 
-    for config in (AIConfig, Settings, OmniRouteConfig, SearchConfig, SecurityConfig):
+    for config in (
+        AdminConfig,
+        AIConfig,
+        Settings,
+        OmniRouteConfig,
+        SearchConfig,
+        SecurityConfig,
+    ):
         config.model_config["env_file"] = None
         config.model_config["hide_input_in_errors"] = True
 
@@ -69,10 +77,31 @@ def main() -> int:
     parser.add_argument("phase", choices=("core", "core-persistence", "gg", "resilience", "recovery", "serve"))
     parser.add_argument("--gg-repo", type=Path, required=True)
     parser.add_argument("--port", type=int, default=0)
-    parser.add_argument("--quota", type=int, default=60)
+    parser.add_argument(
+        "--quota", type=int, default=60,
+        help="Semente do bootstrap do Control Plane (SQLite) quando o banco "
+             "ainda não existe. NÃO é a política efetiva: uma vez que a linha "
+             "gg_oferta/<capability> já existe em quota_policies, o consumo "
+             "sempre lê o limite de lá (ADR 0018, César Core); mudar --quota "
+             "não altera um banco já bootstrapado. Para configurar a política "
+             "de verdade, usar a API Admin real (--admin-* abaixo).",
+    )
     parser.add_argument("--deny-search", action="store_true")
     parser.add_argument("--quota-namespace", default="cesar-core:test:118h")
     parser.add_argument("--quota-redis-port", type=int, choices=(16379, 16380), default=16379)
+    parser.add_argument(
+        "--admin-database", type=Path, default=None,
+        help="SQLite descartável do Control Plane exclusivo deste processo "
+             "(harness de quota, TASK-118H); nunca reaproveitar o SQLite do "
+             "ambiente DEV normal.",
+    )
+    parser.add_argument("--admin-password-hash-file", type=Path, default=None)
+    parser.add_argument("--admin-pepper-file", type=Path, default=None)
+    parser.add_argument(
+        "--admin-allowed-origin", default=None,
+        help="Origem loopback HTTP exclusiva deste processo; ativa "
+             "CESAR_CORE_ADMIN_COOKIE_SECURE=false, restrito a DEV/teste.",
+    )
     args = parser.parse_args()
     gg = args.gg_repo.resolve()
     configure(gg)
@@ -200,6 +229,17 @@ def serve(args):
         raise ValueError("Porta DEV inválida")
     os.environ["CESAR_CORE_SECURITY_AI_REQUESTS_PER_MINUTE"] = str(args.quota)
     os.environ["CESAR_CORE_SECURITY_SEARCH_REQUESTS_PER_MINUTE"] = str(args.quota)
+    if args.admin_database is not None:
+        # Seção 1 (TASK-118H): Control Plane descartável exclusivo deste
+        # processo -- SQLite, segredos e origem próprios, nunca a config do
+        # ambiente DEV normal. Cookie inseguro só é aceito pelo AdminConfig em
+        # origem loopback HTTP (ver validate_browser_boundary), daí o
+        # COOKIE_SECURE=false ficar condicionado a --admin-allowed-origin.
+        os.environ["CESAR_CORE_ADMIN_DATABASE_PATH"] = str(args.admin_database)
+        os.environ["CESAR_CORE_ADMIN_PASSWORD_HASH_FILE"] = str(args.admin_password_hash_file)
+        os.environ["CESAR_CORE_ADMIN_CREDENTIAL_PEPPER_FILE"] = str(args.admin_pepper_file)
+        os.environ["CESAR_CORE_ADMIN_ALLOWED_ORIGIN"] = args.admin_allowed_origin
+        os.environ["CESAR_CORE_ADMIN_COOKIE_SECURE"] = "false"
     if args.deny_search:
         entry = REGISTRY[ApplicationId.GG_OFERTA]
         REGISTRY[ApplicationId.GG_OFERTA] = entry.model_copy(
