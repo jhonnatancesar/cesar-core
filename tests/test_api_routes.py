@@ -63,6 +63,7 @@ def test_capabilities_endpoint_is_honest_about_unconfigured_services() -> None:
         "search": "not_configured",
         "search_general_web": "not_configured",
         "search_technical_documentation": "not_configured",
+        "fetch": "not_configured",
         "omniroute": "not_configured",
     }
 
@@ -385,3 +386,61 @@ def test_metrics_aggregate_authenticated_usage_without_credentials() -> None:
     assert metrics.status_code == 200
     assert 'cesar_core_ai_requests_total{application="gg_oferta"} 1' in metrics.text
     assert TEST_CREDENTIAL not in metrics.text
+
+
+def test_fetch_rejects_an_internal_target_before_reaching_the_manager() -> None:
+    """Regressão de segurança (SSRF): a rota `/v1/fetch` real barra um alvo
+    interno com 400, sem nunca acionar o `FetchManager`/upstream."""
+    response = client.post(
+        "/v1/fetch",
+        headers=_identity_headers(purpose="market_research"),
+        json={
+            "requirements": {
+                "service_class": "economy",
+                "cost_policy": "free_only",
+            },
+            "url": "http://169.254.169.254/latest/meta-data/",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "fetch_target_rejected"
+
+
+def test_fetch_rejects_a_sensitive_query_parameter_before_reaching_the_manager() -> (
+    None
+):
+    """Regressão de segurança (vazamento de dados, FASE E.3): a rota
+    `/v1/fetch` real barra uma URL com parâmetro de alta confiança na query
+    (aqui, um valor sintético claramente falso) já na validação do corpo da
+    requisição -- 422, antes de qualquer autenticação/manager/upstream."""
+    response = client.post(
+        "/v1/fetch",
+        headers=_identity_headers(purpose="market_research"),
+        json={
+            "requirements": {
+                "service_class": "economy",
+                "cost_policy": "free_only",
+            },
+            "url": "https://shop.example.test/product?session_id=FAKE_AUDIT_TOKEN_123",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_fetch_rejects_an_unknown_payload_field() -> None:
+    """Regressão de segurança (FASE E.3): `FetchRequestPayload` usa
+    `extra="forbid"` -- um campo desconhecido no corpo é rejeitado com 422
+    antes de qualquer chamada ao manager/upstream."""
+    response = client.post(
+        "/v1/fetch",
+        headers=_identity_headers(purpose="market_research"),
+        json={
+            "requirements": {
+                "service_class": "economy",
+                "cost_policy": "free_only",
+            },
+            "url": "https://shop.example.test/product",
+            "provider": "firecrawl",
+        },
+    )
+    assert response.status_code == 422

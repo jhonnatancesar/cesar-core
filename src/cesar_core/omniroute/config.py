@@ -19,22 +19,37 @@ class OmniRouteConfig(BaseSettings):
     baixo nível e dos contract tests; os gateways selecionam sua capability.
     """
 
-    model_config = SettingsConfigDict(env_prefix="CESAR_CORE_OMNIROUTE_", env_file=".env")
+    model_config = SettingsConfigDict(
+        env_prefix="CESAR_CORE_OMNIROUTE_", env_file=".env"
+    )
 
     base_url: str = "http://127.0.0.1:20128"
     api_key_file: Path | None = None
     ai_api_key_file: Path | None = None
     search_api_key_file: Path | None = None
+    fetch_api_key_file: Path | None = None
     timeout_seconds: float = 30.0
 
     @model_validator(mode="after")
     def require_distinct_capability_files(self) -> "OmniRouteConfig":
-        if (
-            self.ai_api_key_file is not None
-            and self.search_api_key_file is not None
-            and self.ai_api_key_file.resolve() == self.search_api_key_file.resolve()
-        ):
-            raise ValueError("AI and Search must use distinct OmniRoute key files")
+        configured = {
+            "ai": self.ai_api_key_file,
+            "search": self.search_api_key_file,
+            "fetch": self.fetch_api_key_file,
+        }
+        resolved = {
+            name: path.resolve()
+            for name, path in configured.items()
+            if path is not None
+        }
+        seen: dict[object, str] = {}
+        for name, path in resolved.items():
+            if path in seen:
+                raise ValueError(
+                    f"{seen[path].upper()} and {name.upper()} must use distinct "
+                    "OmniRoute key files"
+                )
+            seen[path] = name
         return self
 
     def read_api_key(self) -> str:
@@ -48,6 +63,7 @@ class OmniRouteConfig(BaseSettings):
         paths = {
             "ai": self.ai_api_key_file,
             "search": self.search_api_key_file,
+            "fetch": self.fetch_api_key_file,
         }
         try:
             path = paths[capability]

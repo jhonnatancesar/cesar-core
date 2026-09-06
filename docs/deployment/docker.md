@@ -1,4 +1,4 @@
-# Operação Docker — César Core 1.0.0
+# Operação Docker — César Core
 
 ## Pré-requisitos e arquivos
 
@@ -105,7 +105,10 @@ ghcr.io/jhonnatancesar/cesar-core@sha256:<digest>, faça pull e up -d cesar-core
 Verifique readiness e chamadas reais. Para rollback, repita com digest anterior
 compatível e os mesmos volumes. Não fazer rollback de dados implicitamente.
 1.0.0 é a primeira release: não se presume imagem anterior disponível.
-Tags Git nunca são movidas. Falha do workflow após tag requer decisão corretiva.
+Releases seguintes (1.1.0 em diante, ex.: Control Plane administrativo)
+seguem o mesmo procedimento de digest acima — nenhuma migração especial de
+volume foi exigida até aqui. Tags Git nunca são movidas. Falha do workflow
+após tag requer decisão corretiva.
 
 ## Troubleshooting
 

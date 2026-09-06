@@ -300,6 +300,132 @@
           }
         }
       }
+    },
+    "/v1/fetch": {
+      "post": {
+        "tags": [
+          "fetch"
+        ],
+        "summary": "Fetch Url",
+        "operationId": "fetch_url_v1_fetch_post",
+        "security": [
+          {
+            "ApplicationBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Service",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "X-Service"
+            }
+          },
+          {
+            "name": "X-Purpose",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "X-Purpose"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FetchRequestPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -446,6 +572,12 @@
             ],
             "title": "Max Tokens",
             "description": "Hard completion-token ceiling. César Core rejects a response when the upstream usage proves that this ceiling was exceeded."
+          },
+          "require_search_grounding": {
+            "type": "boolean",
+            "title": "Require Search Grounding",
+            "description": "Require provider-agnostic Web grounding through OmniRoute.",
+            "default": false
           }
         },
         "type": "object",
@@ -522,6 +654,24 @@
               }
             ],
             "title": "Upstream Request Id"
+          },
+          "grounding_requested": {
+            "type": "boolean",
+            "title": "Grounding Requested",
+            "default": false
+          },
+          "grounding_performed": {
+            "type": "boolean",
+            "title": "Grounding Performed",
+            "default": false
+          },
+          "grounding_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Grounding Sources",
+            "default": []
           }
         },
         "type": "object",
@@ -616,6 +766,11 @@
             "description": "Technical-documentation Search target availability.",
             "default": "not_configured"
           },
+          "fetch": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "description": "Web Fetch/Enrichment Gateway availability.",
+            "default": "not_configured"
+          },
           "omniroute": {
             "$ref": "#/components/schemas/ServiceStatus",
             "default": "not_configured"
@@ -634,6 +789,188 @@
         ],
         "title": "CostPolicy",
         "description": "Restrição de custo que a aplicação consumidora aceita para a chamada."
+      },
+      "FetchErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Message"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Request Id"
+          },
+          "correlation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Correlation Id"
+          },
+          "upstream_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Request Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id",
+          "correlation_id"
+        ],
+        "title": "FetchErrorDetail",
+        "description": "Detalhe de erro estável do endpoint Fetch."
+      },
+      "FetchErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/FetchErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "FetchErrorResponse",
+        "description": "Envelope público de erro do Central Web Fetch/Enrichment Gateway."
+      },
+      "FetchRequestPayload": {
+        "properties": {
+          "requirements": {
+            "$ref": "#/components/schemas/Requirements"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "requirements",
+          "url"
+        ],
+        "title": "FetchRequestPayload",
+        "description": "DTO HTTP público de uma requisição de enriquecimento de URL.\n\nNão recebe ``application_id`` nem qualquer outro dado de identidade no\ncorpo: quem está chamando é sempre resolvido pelo Core, nunca declarado\npelo cliente dentro do payload. Não recebe nome de provider nem opção\nespecífica de provider (formato, profundidade, seletor): esta é a\nfronteira provider-neutral -- o adapter concreto decide isso."
+      },
+      "FetchResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Request Id"
+          },
+          "correlation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Correlation Id"
+          },
+          "provider_gateway": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Provider Gateway"
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Provider"
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Url"
+          },
+          "fetched": {
+            "type": "boolean",
+            "title": "Fetched"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "usage": {
+            "$ref": "#/components/schemas/FetchUsage"
+          },
+          "latency_ms": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Latency Ms"
+          },
+          "upstream_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Request Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "correlation_id",
+          "provider_gateway",
+          "provider",
+          "url",
+          "fetched",
+          "latency_ms"
+        ],
+        "title": "FetchResponse",
+        "description": "Forma neutra de uma resposta de enriquecimento devolvida pelo Core.\n\n``fetched=False`` é sucesso de negócio, não erro: a URL foi alcançada\npelo provider, mas a origem específica não devolveu conteúdo aproveitável\n(bloqueio/paywall/página vazia). O chamador nunca recebe uma exceção\nnesse caso -- mesma semântica que ``FirecrawlScrapeProvider.scrape_basic``\njá tinha no GG Oferta antes desta capability existir no Core."
+      },
+      "FetchUsage": {
+        "properties": {
+          "fetch_cost_usd": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Fetch Cost Usd",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "FetchUsage",
+        "description": "Uso normalizado do enriquecimento informado pelo gateway upstream."
       },
       "HTTPValidationError": {
         "properties": {

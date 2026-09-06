@@ -118,7 +118,7 @@ class QuotaLimiter:
         self._window_seconds = window_seconds
 
     def check(self, application_id: ApplicationId, capability: str, limit: int) -> None:
-        if limit < 1 or capability not in {"ai", "search"}:
+        if limit < 1 or capability not in {"ai", "search", "fetch"}:
             raise ValueError("Invalid quota policy")
         try:
             config = SecurityConfig()

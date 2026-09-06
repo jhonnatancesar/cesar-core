@@ -22,7 +22,9 @@ class OmniRouteTimeoutError(OmniRouteError):
 class OmniRouteAuthError(OmniRouteError):
     """401/403 -- credencial ausente, inválida ou sem escopo suficiente."""
 
-    def __init__(self, status_code: int, body: str, upstream_request_id: str | None = None) -> None:
+    def __init__(
+        self, status_code: int, body: str, upstream_request_id: str | None = None
+    ) -> None:
         super().__init__(f"OmniRoute auth error: HTTP {status_code}")
         self.status_code = status_code
         self.body = body
@@ -32,7 +34,9 @@ class OmniRouteAuthError(OmniRouteError):
 class OmniRouteClientError(OmniRouteError):
     """Outro 4xx -- requisição malformada do lado do chamador."""
 
-    def __init__(self, status_code: int, body: str, upstream_request_id: str | None = None) -> None:
+    def __init__(
+        self, status_code: int, body: str, upstream_request_id: str | None = None
+    ) -> None:
         super().__init__(f"OmniRoute client error: HTTP {status_code}")
         self.status_code = status_code
         self.body = body
@@ -42,7 +46,9 @@ class OmniRouteClientError(OmniRouteError):
 class OmniRouteServerError(OmniRouteError):
     """5xx -- erro interno do próprio OmniRoute."""
 
-    def __init__(self, status_code: int, body: str, upstream_request_id: str | None = None) -> None:
+    def __init__(
+        self, status_code: int, body: str, upstream_request_id: str | None = None
+    ) -> None:
         super().__init__(f"OmniRoute server error: HTTP {status_code}")
         self.status_code = status_code
         self.body = body

@@ -14,9 +14,16 @@ services:
     networks: [backend, ingress]
     environment:
       CESAR_CORE_OMNIROUTE_BASE_URL: http://omniroute:20128
-      CESAR_CORE_OMNIROUTE_TIMEOUT_SECONDS: ${CESAR_CORE_OMNIROUTE_TIMEOUT_SECONDS:-90}
+      # FASE F1: precisa exceder FIRECRAWL_TIMEOUT_MS (serviço omniroute,
+      # abaixo) -- os dois formam uma cadeia (Core -> OmniRoute ->
+      # Firecrawl). Compartilhado por AI/Search/Fetch (sem timeout
+      # separado por capability no OmniRouteConfig hoje); um teto maior
+      # não piora AI/Search em operação normal, só evita que Fetch seja
+      # cortado por aqui antes do OmniRoute terminar de tentar o Firecrawl.
+      CESAR_CORE_OMNIROUTE_TIMEOUT_SECONDS: ${CESAR_CORE_OMNIROUTE_TIMEOUT_SECONDS:-150}
       CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE: /run/secrets/omniroute_ai
       CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE: /run/secrets/omniroute_search
+      CESAR_CORE_OMNIROUTE_FETCH_API_KEY_FILE: /run/secrets/omniroute_fetch
       CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE: /run/secrets/application
       CESAR_CORE_SECURITY_QUOTA_REDIS_URL: redis://redis:6379/0
       CESAR_CORE_SECURITY_QUOTA_NAMESPACE: ${CESAR_CORE_SECURITY_QUOTA_NAMESPACE:-cesar-core:quota:v1}
@@ -32,7 +39,9 @@ services:
       CESAR_CORE_SEARCH_PROVIDER_HEALTH_URL: http://searxng:8080/healthz
       CESAR_CORE_SEARCH_TECHNICAL_DOCUMENTATION_PROVIDER: context7
       CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT: ${CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT:-20}
-    secrets: [application, omniroute_ai, omniroute_search]
+      CESAR_CORE_FETCH_ENABLED: ${CESAR_CORE_FETCH_ENABLED:-false}
+      CESAR_CORE_FETCH_DEFAULT_PROVIDER: firecrawl
+    secrets: [application, omniroute_ai, omniroute_search, omniroute_fetch]
     volumes: [control-plane-data:/var/lib/cesar-core]
 
   redis:
@@ -54,11 +63,40 @@ services:
     image: diegosouzapw/omniroute@sha256:085c57adf499a8aaa9f35ccde95c0df9c11bd9ecd18d6c9edbf3b68b8079ba9d
     platform: linux/amd64
     restart: unless-stopped
+    # FASE E.1: INITIAL_PASSWORD só bootstrapa a senha administrativa
+    # enquanto nenhuma senha existir ainda (ver managementPassword.ts);
+    # não sobrescreve uma senha já configurada. Valor real fica só no
+    # arquivo local ignorado pelo Git, nunca em compose.yaml/.env.
+    env_file: [./.secrets/omniroute-admin.env]
     networks: [backend, egress]
     environment:
       REQUIRE_API_KEY: "true"
       QUOTA_STORE_DRIVER: sqlite
       OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS: "true"
+      # FASE E.3: nível oficial documentado (debug|info|warn|error, default
+      # info) -- reduz o log de acesso, que inclui a URL completa (query e
+      # fragment) de cada `/v1/web/fetch`, sem exigir fork/patch do OmniRoute.
+      APP_LOG_LEVEL: warn
+      # FASE F1: causa raiz real do `503 fetch_upstream_unavailable` no
+      # Fetch do Hardware Barato -- lida no código-fonte oficial do
+      # OmniRoute (open-sse/executors/firecrawl-fetch.ts, leitura, nenhum
+      # fork): FIRECRAWL_DEFAULT_TIMEOUT_MS = 30_000 hardcoded, path
+      # `/v1/scrape` hardcoded (sem variável para trocar de versão). Uma
+      # busca fria (sem cache do próprio Firecrawl) desta página
+      # específica (86 ofertas + tabela de histórico extensa) mediu ~15,8s
+      # via chamada direta ao Firecrawl -- suficiente pra estourar 30s em
+      # dia ruim/página ainda mais pesada. `FIRECRAWL_TIMEOUT_MS` é lido
+      # diretamente pelo mesmo código-fonte (`getFirecrawlTimeoutMs`) --
+      # mecanismo oficial, não documentado no compose original mas real no
+      # binário certificado, sem exigir fork/patch. Elevado para 2min a
+      # pedido explícito do usuário (folga maior que os ~15,8s/~10,8s
+      # medidos em buscas frias reais desta e de outras páginas pesadas do
+      # Hardware Barato) -- CESAR_CORE_OMNIROUTE_TIMEOUT_SECONDS (serviço
+      # cesar-core, acima) e AISHOPPING_CESAR_CORE_FETCH_TIMEOUT_SECONDS
+      # (GG Oferta, backend/app/core/config.py) foram elevados junto, na
+      # mesma rodada -- os três formam uma cadeia (GG -> Core -> OmniRoute
+      # -> Firecrawl); manter só este mais alto teria efeito nenhum.
+      FIRECRAWL_TIMEOUT_MS: "120000"
     volumes: [omniroute-data:/app/data]
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:20128/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -101,5 +139,7 @@ secrets:
     file: ${CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE:-./.secrets/ggoferta-ai}
   omniroute_search:
     file: ${CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE:-./.secrets/ggoferta-search}
+  omniroute_fetch:
+    file: ${CESAR_CORE_OMNIROUTE_FETCH_API_KEY_FILE:-./.secrets/ggoferta-fetch}
   searxng:
     file: ${CESAR_CORE_SEARXNG_SECRET_FILE:-./.secrets/searxng}

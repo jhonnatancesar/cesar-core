@@ -12,7 +12,7 @@ def test_gg_oferta_is_active() -> None:
     assert entry.state is ApplicationState.ACTIVE
     assert is_active(ApplicationId.GG_OFERTA) is True
     assert entry.client_id == "ggoferta-core-client"
-    assert entry.allowed_capabilities == frozenset({"ai", "search"})
+    assert entry.allowed_capabilities == frozenset({"ai", "search", "fetch"})
 
 
 def test_claudiao_is_reserved() -> None:

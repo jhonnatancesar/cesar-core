@@ -12,7 +12,7 @@ from cesar_core import __version__
 from cesar_core.admin.routes import api as admin_api
 from cesar_core.admin.routes import ui as admin_ui
 from cesar_core.admin.storage import get_store
-from cesar_core.api.routes import ai, capabilities, health, metrics, search
+from cesar_core.api.routes import ai, capabilities, fetch, health, metrics, search
 from cesar_core.security.contracts import SecurityErrorDetail, SecurityErrorResponse
 from cesar_core.security.errors import (
     InvalidCredentialError,
@@ -109,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(capabilities.router)
     app.include_router(ai.router)
     app.include_router(search.router)
+    app.include_router(fetch.router)
     app.include_router(metrics.router)
     app.include_router(admin_api)
     app.include_router(admin_ui)

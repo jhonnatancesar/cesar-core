@@ -61,6 +61,11 @@ class AIRequestPayload(BaseModel):
             "upstream usage proves that this ceiling was exceeded."
         ),
     )
+    require_search_grounding: bool = Field(
+        default=False,
+        strict=True,
+        description="Require provider-agnostic Web grounding through OmniRoute.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -92,6 +97,7 @@ class AIRequestPayload(BaseModel):
             requirements=self.requirements,
             messages=tuple(messages),
             max_tokens=self.max_tokens,
+            require_search_grounding=self.require_search_grounding,
         )
 
 
@@ -107,6 +113,7 @@ class AIRequest(BaseModel):
     requirements: Requirements
     messages: tuple[AIMessage, ...] = Field(min_length=1)
     max_tokens: int | None = Field(default=None, ge=1)
+    require_search_grounding: bool = Field(default=False, strict=True)
 
 
 class AIUsage(BaseModel):
@@ -130,6 +137,19 @@ class AIResponse(BaseModel):
     latency_ms: float = Field(ge=0)
     fallback_used: bool = False
     upstream_request_id: str | None = None
+    grounding_requested: bool = Field(default=False, strict=True)
+    grounding_performed: bool = Field(default=False, strict=True)
+    grounding_sources: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_grounding_evidence(self):
+        if self.grounding_performed and not self.grounding_requested:
+            raise ValueError("grounding_performed requires grounding_requested")
+        if self.grounding_sources and not self.grounding_performed:
+            raise ValueError("grounding_sources require grounding_performed")
+        if any(not source.strip() for source in self.grounding_sources):
+            raise ValueError("grounding_sources must not contain blank values")
+        return self
 
 
 class AIErrorDetail(BaseModel):

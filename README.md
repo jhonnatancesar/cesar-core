@@ -72,6 +72,18 @@ expiração absoluta e por inatividade, CSRF e validação Origin/Host. Em HTTPS
 `CESAR_CORE_ADMIN_COOKIE_SECURE` deve permanecer `true`; `false` é exceção de
 loopback DEV.
 
+Quota efetiva por aplicação (`quota_policies`) é decidida aqui, não no lado
+do consumidor — ver [ADR 0018](docs/adr/0018-persistent-quota-recovery.md).
+Instalação e funcionalidade da integração vistas do lado de um consumidor
+real (GG Oferta): `docs/installation/cesar-core.md` e
+`docs/architecture/cesar-core-integration.md` no repositório
+[jhonnatancesar/AIShoppingAgent](https://github.com/jhonnatancesar/AIShoppingAgent)
+(privado, separado deste).
+O procedimento completo para colocar os dois projetos em funcionamento em DEV,
+incluindo configuração dos dois lados e smoke tests, está em
+[Arquitetura canônica GG Oferta ↔ César Core](docs/architecture/gg-oferta-core.md)
+e [integração em DEV](docs/integration/gg-oferta-dev.md).
+
 ## Execução Docker / Compose (recomendada)
 
 Pré-requisitos: Docker Engine/Desktop com Linux containers, Compose v2 e
@@ -162,7 +174,8 @@ AI e Search não recebem modelo/provider escolhido pelo body público.
 
 Arquivos locais ignorados pelo Git:
 
-- `.secrets/ggoferta-core-client`: segredo exclusivo do consumidor → Core.
+- `.secrets/ggoferta-core-client-dev`: segredo exclusivo do consumidor → Core
+  no ambiente DEV. Outros ambientes devem usar arquivo e valor próprios.
 - `.secrets/ggoferta-ai` e `.secrets/ggoferta-search`: chaves fornecidas pelo
   OmniRoute, independentes por capability e sem escopo administrativo.
 - `.secrets/searxng`: valor aleatório forte para o servidor SearXNG.
@@ -249,6 +262,23 @@ docker compose -f compose.yaml -f deploy/compose.dev.yaml build cesar-core
 Contracts reais exigem infraestrutura e credenciais DEV; mocks não substituem
 AI/Search reais. Há 22 contracts baseline e nove de quota/recovery/durabilidade.
 Os harnesses históricos 118H são DEV Windows e nunca devem apontar para PROD.
+
+**Testes são herméticos ao `.env` operacional (FASE E.2).** Uma fixture
+autouse em `tests/conftest.py` (`_isolated_settings_env_file`) muda o cwd do
+processo pra um diretório vazio por teste, então nenhuma classe de
+configuração (`AIConfig`, `SearchConfig`, `FetchConfig`, `OmniRouteConfig`,
+`SecurityConfig`, `AdminConfig` -- todas `env_file=".env"`, resolvido pelo
+cwd, nunca pelo pacote) herda o `.env` real de DEV por acidente, não importa
+de onde o `pytest` foi chamado. Isso nunca é opcional nem por convenção: o
+`.env` real deste projeto tem chaves de várias capabilities, e cada
+`BaseSettings` usa `extra="forbid"` -- uma classe "nua" que enxergasse esse
+arquivo falharia com `ValidationError` para as chaves de prefixo alheio (ou,
+pior, aceitaria silenciosamente um valor operacional real que o teste nunca
+pediu). Variáveis de ambiente reais do processo continuam funcionando
+normalmente (não são afetadas por este isolamento) -- só o arquivo `.env` é
+neutralizado. Ver `tests/test_settings_env_isolation.py` para a prova
+completa. Runtime real (containers, `python -m uvicorn ...`) nunca passa por
+este `conftest.py` e continua lendo o `.env` normalmente.
 [Contratos](contracts/README.md) e [validação 118H](docs/task-118h-rollout-resilience.md).
 [Validação da distribuição 1.0.0](docs/deployment/release-1.0.0-validation.md).
 Locks universais em `requirements/` têm versões e hashes; fontes em

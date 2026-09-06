@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from cesar_core.ai.contracts import AIRequest
@@ -53,6 +55,22 @@ class FailingClient:
         raise self.error
 
 
+class SequenceClient:
+    def __init__(self, bodies: list[dict]) -> None:
+        self.bodies = iter(bodies)
+        self.payloads: list[dict] = []
+
+    async def chat_completions(
+        self, payload: dict, *, correlation_id: str
+    ) -> OmniRouteResponse:
+        self.payloads.append(payload)
+        return OmniRouteResponse(
+            status_code=200,
+            body=next(self.bodies),
+            upstream_request_id=f"upstream-{len(self.payloads)}",
+        )
+
+
 def _request() -> AIRequest:
     return AIRequest(
         context=ApplicationContext(
@@ -100,6 +118,71 @@ async def test_omniroute_ai_provider_translates_request_and_response() -> None:
     assert response.usage is not None and response.usage.total_tokens == 5
     assert response.fallback_used is True
     assert response.upstream_request_id == "upstream-1"
+
+
+async def test_grounding_executes_web_tool_and_preserves_typed_messages() -> None:
+    request = _request().model_copy(update={"require_search_grounding": True})
+    tool_call = {
+        "id": "call-1",
+        "type": "function",
+        "function": {"name": "omniroute_web_search", "arguments": "{}"},
+    }
+    evidence = {
+        "success": True,
+        "results": [{"title": "Python", "url": "https://docs.python.org/"}],
+    }
+    client = SequenceClient(
+        [
+            {
+                "choices": [{"message": {"content": None, "tool_calls": [tool_call]}}],
+                "tool_results": [
+                    {"tool_call_id": "call-1", "output": json.dumps(evidence)}
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 5, "total_tokens": 9},
+            },
+            {
+                "model": "resolved",
+                "choices": [{"message": {"content": "grounded answer"}}],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 7, "total_tokens": 27},
+            },
+        ]
+    )
+    response = await OmniRouteAIProvider(client).complete(  # type: ignore[arg-type]
+        request, target=AIModelTarget("model-a")
+    )
+
+    assert client.payloads[0]["messages"] == [
+        {"role": "user", "content": "normalize"}
+    ]
+    assert client.payloads[0]["tools"] == [
+        {"type": "web_search", "search_context_size": "low"}
+    ]
+    assert client.payloads[1]["messages"][0] == {
+        "role": "user",
+        "content": "normalize",
+    }
+    assert client.payloads[1]["messages"][-1]["role"] == "tool"
+    assert client.payloads[1]["max_tokens"] == 45
+    assert response.grounding_requested and response.grounding_performed
+    assert response.grounding_sources == ("https://docs.python.org/",)
+    assert response.usage is not None
+    assert response.usage.completion_tokens == 12
+
+
+async def test_grounding_without_structured_evidence_fails_closed() -> None:
+    request = _request().model_copy(update={"require_search_grounding": True})
+    client = SequenceClient(
+        [
+            {
+                "choices": [{"message": {"content": "ungrounded"}}],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+            }
+        ]
+    )
+    with pytest.raises(AIUpstreamResponseError):
+        await OmniRouteAIProvider(client).complete(  # type: ignore[arg-type]
+            request, target=AIModelTarget("model-a")
+        )
 
 
 async def test_omniroute_ai_provider_rejects_invalid_envelope() -> None:

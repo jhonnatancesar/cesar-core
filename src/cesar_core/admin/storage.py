@@ -64,7 +64,9 @@ class ControlPlaneStore:
                     + "COMMIT;"
                 )
 
-    def bootstrap(self, ai_limit: int, search_limit: int) -> None:
+    def bootstrap(
+        self, ai_limit: int, search_limit: int, fetch_limit: int = 60
+    ) -> None:
         now = utcnow()
         with self.connect() as db:
             db.execute(
@@ -91,7 +93,11 @@ class ControlPlaneStore:
                     now,
                 ),
             )
-            for capability, limit in (("ai", ai_limit), ("search", search_limit)):
+            for capability, limit in (
+                ("ai", ai_limit),
+                ("search", search_limit),
+                ("fetch", fetch_limit),
+            ):
                 db.execute(
                     "INSERT OR IGNORE INTO application_capabilities VALUES (?,?)",
                     ("gg_oferta", capability),
@@ -412,7 +418,9 @@ def get_store() -> ControlPlaneStore:
 
         config = SecurityConfig()
         _STORE.bootstrap(
-            config.ai_requests_per_minute, config.search_requests_per_minute
+            config.ai_requests_per_minute,
+            config.search_requests_per_minute,
+            config.fetch_requests_per_minute,
         )
         _STORE.prune_usage(AdminConfig().usage_retention_days)
     return _STORE

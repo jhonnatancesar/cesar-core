@@ -111,6 +111,19 @@ def test_legacy_prompt_normalizes_without_changing_text(typed_client):
     assert "prompt" not in AIRequest.model_fields
 
 
+def test_grounding_flag_is_provider_agnostic_and_defaults_off():
+    payload = AIRequestPayload(
+        requirements={"service_class": "economy", "cost_policy": "free_only"},
+        messages=[{"role": "user", "content": "question"}],
+        require_search_grounding=True,
+    )
+    assert payload.require_search_grounding is True
+    assert AIRequestPayload(
+        requirements={"service_class": "economy", "cost_policy": "free_only"},
+        prompt="question",
+    ).require_search_grounding is False
+
+
 @pytest.mark.parametrize(
     "payload",
     [

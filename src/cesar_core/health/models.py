@@ -42,8 +42,11 @@ class ReadinessStatus(BaseModel):
 
     status: str = "ok"
     core: ServiceStatus = ServiceStatus.AVAILABLE
-    reason: Literal["quota_store_misconfigured", "quota_store_unavailable"] | None = Field(
-        default=None, description="Safe quota dependency failure reason; omitted when absent."
+    reason: Literal["quota_store_misconfigured", "quota_store_unavailable"] | None = (
+        Field(
+            default=None,
+            description="Safe quota dependency failure reason; omitted when absent.",
+        )
     )
 
 
@@ -73,5 +76,9 @@ class CapabilitiesResponse(BaseModel):
     search_technical_documentation: ServiceStatus = Field(
         default=ServiceStatus.NOT_CONFIGURED,
         description="Technical-documentation Search target availability.",
+    )
+    fetch: ServiceStatus = Field(
+        default=ServiceStatus.NOT_CONFIGURED,
+        description="Web Fetch/Enrichment Gateway availability.",
     )
     omniroute: ServiceStatus = ServiceStatus.NOT_CONFIGURED

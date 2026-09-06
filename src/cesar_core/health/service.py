@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from cesar_core.admin.config import AdminConfig
 from cesar_core.admin.storage import get_store
 from cesar_core.ai.config import AIConfig
+from cesar_core.fetch.config import FetchConfig
 from cesar_core.health.models import (
     CapabilitiesResponse,
     HealthStatus,
@@ -35,23 +36,25 @@ def get_readiness(
     dependencies_ready: bool | None = None,
     ai_config: AIConfig | None = None,
     search_config: SearchConfig | None = None,
+    fetch_config: FetchConfig | None = None,
     security_config: SecurityConfig | None = None,
 ) -> ReadinessStatus:
     """César Core apto a atender as capacidades atualmente habilitadas.
 
     Readiness é derivado de ``get_capabilities()``, não de um valor hardcoded.
     Sem capacidade configurada, não há dependência obrigatória e o Core está
-    pronto. Quando AI ou Search está habilitado, ``dependencies_ready`` deve
-    representar os probes reais exigidos pela capacidade.
+    pronto. Quando AI, Search ou Fetch está habilitado, ``dependencies_ready``
+    deve representar os probes reais exigidos pela capacidade.
     """
     capabilities = get_capabilities(
         ai_config=ai_config,
         search_config=search_config,
+        fetch_config=fetch_config,
         security_config=security_config,
     )
     domain_enabled = any(
         status is ServiceStatus.AVAILABLE
-        for status in (capabilities.ai, capabilities.search)
+        for status in (capabilities.ai, capabilities.search, capabilities.fetch)
     )
     is_ready = not domain_enabled or (
         capabilities.application_authentication is ServiceStatus.AVAILABLE
@@ -66,11 +69,13 @@ def get_capabilities(
     *,
     ai_config: AIConfig | None = None,
     search_config: SearchConfig | None = None,
+    fetch_config: FetchConfig | None = None,
     security_config: SecurityConfig | None = None,
 ) -> CapabilitiesResponse:
     """Capacidades habilitadas pela configuração atual."""
     ai = ai_config or AIConfig()
     search = search_config or SearchConfig()
+    fetch = fetch_config or FetchConfig()
     security = security_config or SecurityConfig()
     authentication_configured = security.is_configured
     if not authentication_configured:
@@ -107,9 +112,14 @@ def get_capabilities(
             and search.normalized_technical_documentation_provider is not None
             else ServiceStatus.NOT_CONFIGURED
         ),
+        fetch=(
+            ServiceStatus.AVAILABLE
+            if fetch.is_configured
+            else ServiceStatus.NOT_CONFIGURED
+        ),
         omniroute=(
             ServiceStatus.AVAILABLE
-            if ai.is_configured or search.is_configured
+            if ai.is_configured or search.is_configured or fetch.is_configured
             else ServiceStatus.NOT_CONFIGURED
         ),
     )
@@ -119,8 +129,15 @@ async def probe_readiness() -> ReadinessStatus:
     """Confirma OmniRoute e auth das capacidades habilitadas."""
     ai_config = AIConfig()
     search_config = SearchConfig()
-    if not ai_config.is_configured and not search_config.is_configured:
-        return get_readiness(ai_config=ai_config, search_config=search_config)
+    fetch_config = FetchConfig()
+    if (
+        not ai_config.is_configured
+        and not search_config.is_configured
+        and not fetch_config.is_configured
+    ):
+        return get_readiness(
+            ai_config=ai_config, search_config=search_config, fetch_config=fetch_config
+        )
 
     security_config = SecurityConfig()
     try:
@@ -146,6 +163,10 @@ async def probe_readiness() -> ReadinessStatus:
             capability_configs.append(
                 ("search", omniroute_config.for_capability("search"))
             )
+        if fetch_config.is_configured:
+            capability_configs.append(
+                ("fetch", omniroute_config.for_capability("fetch"))
+            )
         clients = [
             (capability, OmniRouteClient(config))
             for capability, config in capability_configs
@@ -156,6 +177,7 @@ async def probe_readiness() -> ReadinessStatus:
         return get_readiness(
             ai_config=ai_config,
             search_config=search_config,
+            fetch_config=fetch_config,
             security_config=security_config,
             dependencies_ready=False,
         )
@@ -176,16 +198,23 @@ async def probe_readiness() -> ReadinessStatus:
                     and await client.chat_authentication_enforced()
                     and await client.chat_credential_accepted()
                 )
-            else:
+            elif capability == "search":
                 authentication_enforced = (
                     authentication_enforced
                     and await client.search_authentication_enforced()
                     and await client.search_credential_accepted()
                 )
+            else:
+                authentication_enforced = (
+                    authentication_enforced
+                    and await client.fetch_authentication_enforced()
+                    and await client.fetch_credential_accepted()
+                )
     except (OmniRouteError, OSError, httpx.HTTPError, ValueError):
         return get_readiness(
             ai_config=ai_config,
             search_config=search_config,
+            fetch_config=fetch_config,
             security_config=security_config,
             dependencies_ready=False,
         )
@@ -195,6 +224,7 @@ async def probe_readiness() -> ReadinessStatus:
     return get_readiness(
         ai_config=ai_config,
         search_config=search_config,
+        fetch_config=fetch_config,
         security_config=security_config,
         dependencies_ready=authentication_enforced,
     )

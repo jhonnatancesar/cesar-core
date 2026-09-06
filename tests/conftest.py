@@ -18,6 +18,43 @@ from cesar_core.admin.storage import reset_store_for_tests
 
 
 @pytest.fixture(autouse=True)
+def _isolated_settings_env_file(tmp_path, monkeypatch):
+    """Neutraliza o `.env` operacional de DEV (`C:\\cesar-core\\.env`) para
+    toda a suíte -- FASE E.2.
+
+    Toda classe de configuração do Core (``AIConfig``, ``SearchConfig``,
+    ``FetchConfig``, ``OmniRouteConfig``, ``SecurityConfig``, ``AdminConfig``)
+    declara ``env_file=".env"`` em ``model_config``, um caminho relativo
+    resolvido pelo cwd do PROCESSO no momento em que a classe é instanciada
+    -- nunca relativo ao pacote. Rodar os testes a partir da raiz do
+    repositório (onde o `.env` real de DEV mora) faz qualquer instanciação
+    "nua" (``Settings()`` sem ``_env_file=None``) herdar esse arquivo por
+    acidente.
+
+    A contaminação nunca é um valor plausível e ignorado silenciosamente:
+    `pydantic-settings` (`DotEnvSettingsSource`) carrega TODAS as chaves do
+    arquivo `.env`, mesmo as de um `env_prefix` diferente do da classe sendo
+    instanciada -- ao contrário de uma variável de ambiente real do
+    processo, que já chega filtrada por prefixo. Como toda `BaseSettings`
+    aqui usa `extra="forbid"` (default), o resultado é `ValidationError`
+    (`extra_forbidden`) para a chave de outra capability, não um valor
+    errado silencioso -- mas ainda assim um teste cujo resultado depende de
+    qual `.env` (se algum) existe no cwd de quem rodou o pytest, o que é
+    exatamente o que esta fixture elimina.
+
+    ``monkeypatch.chdir`` para um diretório vazio por teste é suficiente e
+    não exige tocar as ~6 classes uma a uma nem seus ``model_config``: sem
+    `.env` para encontrar, cada uma cai de volta a variáveis de ambiente
+    reais (explicitamente setadas por outro fixture/teste via
+    ``monkeypatch.setenv``, que não sofrem este problema) e aos defaults do
+    próprio modelo -- nunca a um arquivo. Runtime de produção/DEV real
+    (`python -m uvicorn ...`, containers) nunca passa por este `conftest.py`
+    e continua lendo o `.env` normalmente.
+    """
+    monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture(autouse=True)
 def isolated_quota_store(request, monkeypatch, tmp_path):
     """Units usam fake explícito; contracts nunca substituem o Redis real."""
     monkeypatch.setenv(

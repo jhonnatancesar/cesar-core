@@ -38,6 +38,7 @@ REQUEST_ID_HEADER = "x-request-id"
 
 CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
 SEARCH_PATH = "/v1/search"
+WEB_FETCH_PATH = "/v1/web/fetch"
 AUTH_PROBE_MODEL = "does-not-exist-cesar-core-auth-enforcement-probe"
 AUTH_PROBE_SEARCH_PROVIDER = "does-not-exist-cesar-core-auth-enforcement-probe"
 AUTH_PROBE_TOKEN = "sk-cesar-core-intentionally-invalid-auth-probe"
@@ -199,6 +200,64 @@ class OmniRouteClient:
             SEARCH_PATH,
             payload,
             request_id="cesar-core-readiness-search-credential-probe",
+        )
+
+    async def fetch(
+        self, payload: dict[str, Any], *, correlation_id: str
+    ) -> OmniRouteResponse:
+        """``POST /v1/web/fetch`` de baixo nível.
+
+        ``payload`` é o corpo no formato nativo do OmniRoute (ex.:
+        ``{"url": ..., "provider": ..., "format": "markdown", "depth": 0,
+        "include_metadata": true}``) -- montado pelo adapter de domínio
+        (``fetch/providers/omniroute.py``), não por este client.
+        """
+        return await self.request(
+            "POST", WEB_FETCH_PATH, correlation_id=correlation_id, json=payload
+        )
+
+    async def fetch_authentication_enforced(self) -> bool:
+        """Prova que a rota Fetch rejeita uma credencial inválida.
+
+        O provider deliberadamente inexistente impede um fetch externo real
+        caso autenticação esteja desabilitada.
+        """
+        headers = {
+            "Authorization": f"Bearer {AUTH_PROBE_TOKEN}",
+            REQUEST_ID_HEADER: "cesar-core-readiness-fetch-auth-probe",
+        }
+        payload = {
+            "url": "https://example.invalid/cesar-core-auth-probe",
+            "provider": AUTH_PROBE_SEARCH_PROVIDER,
+        }
+        try:
+            response = await self._http.post(
+                WEB_FETCH_PATH,
+                json=payload,
+                headers=headers,
+            )
+        except httpx.TimeoutException as exc:
+            raise OmniRouteTimeoutError("OmniRoute fetch auth probe timed out") from exc
+        except httpx.ConnectError as exc:
+            raise OmniRouteConnectionError(
+                "OmniRoute unreachable during fetch auth probe"
+            ) from exc
+        if response.status_code in (401, 403):
+            return True
+        if response.status_code >= 500:
+            self._raise_for_status(response)
+        return False
+
+    async def fetch_credential_accepted(self) -> bool:
+        """Valida a credencial Fetch sem executar um provider real."""
+        payload = {
+            "url": "https://example.invalid/cesar-core-credential-probe",
+            "provider": AUTH_PROBE_SEARCH_PROVIDER,
+        }
+        return await self._credential_reaches_target_validation(
+            WEB_FETCH_PATH,
+            payload,
+            request_id="cesar-core-readiness-fetch-credential-probe",
         )
 
     async def _credential_reaches_target_validation(

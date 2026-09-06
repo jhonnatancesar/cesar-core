@@ -27,6 +27,16 @@ from cesar_core.ai.providers.omniroute import OmniRouteAIProvider
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
 from cesar_core.applications.registry import list_applications
+from cesar_core.fetch.config import FetchConfig
+from cesar_core.fetch.contracts import FetchRequest, FetchResponse
+from cesar_core.fetch.errors import FetchUpstreamUnavailableError
+from cesar_core.fetch.manager import FetchManager
+from cesar_core.fetch.policy import (
+    WILDCARD_PURPOSE as FETCH_WILDCARD_PURPOSE,
+)
+from cesar_core.fetch.policy import FetchPolicy, FetchProviderTarget
+from cesar_core.fetch.policy import PolicyKey as FetchPolicyKey
+from cesar_core.fetch.providers.omniroute import build_fetch_provider
 from cesar_core.omniroute.client import OmniRouteClient
 from cesar_core.omniroute.config import OmniRouteConfig
 from cesar_core.policy.purpose import Purpose
@@ -140,6 +150,15 @@ def get_search_application_context(
     x_purpose: str = Header(alias="X-Purpose"),
 ) -> ApplicationContext:
     return _authorized_context(request, application_id, x_service, x_purpose, "search")
+
+
+def get_fetch_application_context(
+    request: Request,
+    application_id: ApplicationId = Depends(get_authenticated_application),
+    x_service: str = Header(alias="X-Service"),
+    x_purpose: str = Header(alias="X-Purpose"),
+) -> ApplicationContext:
+    return _authorized_context(request, application_id, x_service, x_purpose, "fetch")
 
 
 async def get_ai_manager() -> AsyncIterator[AIManager]:
@@ -270,4 +289,60 @@ class _UnavailableSearchProvider:
     async def search(
         self, request: SearchRequest, *, target: SearchProviderTarget
     ) -> SearchResponse:
+        raise self._error
+
+
+async def get_fetch_manager() -> AsyncIterator[FetchManager]:
+    """Constrói o runtime Fetch/Enrichment configurado por variáveis de ambiente."""
+    config = FetchConfig()
+    if not config.is_configured:
+        yield FetchManager(_UnavailableFetchProvider(), FetchPolicy({}))
+        return
+
+    rules: dict[FetchPolicyKey, FetchProviderTarget] = {}
+    for service_class in ServiceClass:
+        provider = config.provider_for(service_class)
+        if provider is not None:
+            for application in list_applications():
+                if (
+                    application.state.value != "active"
+                    or "fetch" not in application.allowed_capabilities
+                ):
+                    continue
+                rules[(application.id, FETCH_WILDCARD_PURPOSE, service_class)] = (
+                    FetchProviderTarget(
+                        provider=provider,
+                        paid=config.provider_is_paid,
+                    )
+                )
+
+    try:
+        omniroute_config = OmniRouteConfig().for_capability("fetch")
+    except ValueError:
+        yield FetchManager(
+            _UnavailableFetchProvider(
+                FetchUpstreamUnavailableError("OmniRoute is not configured")
+            ),
+            FetchPolicy(rules),
+        )
+        return
+
+    client = OmniRouteClient(omniroute_config)
+    try:
+        yield FetchManager(build_fetch_provider(client, config), FetchPolicy(rules))
+    finally:
+        await client.aclose()
+
+
+class _UnavailableFetchProvider:
+    """Provider sentinela para produzir erros públicos normalizados."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error or FetchUpstreamUnavailableError(
+            "Central Web Fetch/Enrichment Gateway is not configured"
+        )
+
+    async def fetch(
+        self, request: FetchRequest, *, target: FetchProviderTarget
+    ) -> FetchResponse:
         raise self._error

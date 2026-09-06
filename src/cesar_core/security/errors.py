@@ -44,4 +44,6 @@ class QuotaStoreMisconfiguredError(QuotaStoreUnavailableError):
     code = "quota_store_misconfigured"
 
     def __init__(self) -> None:
-        SecurityError.__init__(self, "Application quota storage durability requirements not met")
+        SecurityError.__init__(
+            self, "Application quota storage durability requirements not met"
+        )

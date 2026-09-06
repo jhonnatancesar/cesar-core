@@ -4,6 +4,7 @@ import logging
 
 from cesar_core.ai.contracts import AIResponse
 from cesar_core.applications.context import ApplicationContext
+from cesar_core.fetch.contracts import FetchResponse
 from cesar_core.search.contracts import SearchResponse
 
 LOGGER = logging.getLogger("cesar_core.telemetry")
@@ -73,5 +74,23 @@ def trace_search_success(context: ApplicationContext, response: SearchResponse) 
             "queries": response.usage.queries_used,
             "cost_usd": response.usage.search_cost_usd,
             "cached": response.cached,
+        },
+    )
+
+
+def trace_fetch_success(context: ApplicationContext, response: FetchResponse) -> None:
+    LOGGER.info(
+        "fetch_request_completed",
+        extra={
+            "application": context.application_id.value,
+            "service": context.service,
+            "purpose": context.purpose.value,
+            "request_id": context.request_id,
+            "correlation_id": context.correlation_id,
+            "provider": response.provider,
+            "latency_ms": response.latency_ms,
+            "fetched": response.fetched,
+            "truncated": response.truncated,
+            "cost_usd": response.usage.fetch_cost_usd,
         },
     )

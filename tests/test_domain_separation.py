@@ -26,11 +26,21 @@ def test_search_provider_does_not_import_ai() -> None:
     assert not any(module.startswith("cesar_core.ai") for module in modules)
 
 
+def test_fetch_provider_does_not_import_ai_or_search() -> None:
+    modules = _imported_modules(SRC / "fetch" / "provider.py")
+    assert not any(
+        module.startswith(("cesar_core.ai", "cesar_core.search")) for module in modules
+    )
+
+
 def test_omniroute_client_does_not_import_ai_or_search_domain() -> None:
     """omniroute/ é transporte de baixo nível (TASK-118B) -- nunca conhece
-    contratos de domínio de AI/Search (ADR 0006/0011)."""
+    contratos de domínio de AI/Search/Fetch (ADR 0006/0011)."""
     modules = _imported_modules(SRC / "omniroute" / "client.py")
-    assert not any(module.startswith(("cesar_core.ai", "cesar_core.search")) for module in modules)
+    assert not any(
+        module.startswith(("cesar_core.ai", "cesar_core.search", "cesar_core.fetch"))
+        for module in modules
+    )
 
 
 def test_omniroute_client_transport_methods_take_neutral_payloads() -> None:
@@ -43,7 +53,7 @@ def test_omniroute_client_transport_methods_take_neutral_payloads() -> None:
 
     from cesar_core.omniroute.client import OmniRouteClient
 
-    for method_name in ("chat_completions", "search"):
+    for method_name in ("chat_completions", "search", "fetch"):
         signature = inspect.signature(getattr(OmniRouteClient, method_name))
         payload_annotation = str(signature.parameters["payload"].annotation)
         assert "dict" in payload_annotation

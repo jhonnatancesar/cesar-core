@@ -32,11 +32,15 @@ def test_official_compose_topology_and_secrets():
         assert "ports" not in services[service]
         assert "@sha256:" in services[service]["image"]
     env = core["environment"]
-    assert env["CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE"] != env[
-        "CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE"
-    ]
+    omniroute_key_files = {
+        env["CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE"],
+        env["CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE"],
+        env["CESAR_CORE_OMNIROUTE_FETCH_API_KEY_FILE"],
+    }
+    assert len(omniroute_key_files) == 3  # uma credencial distinta por capability
     assert services["omniroute"]["environment"]["REQUIRE_API_KEY"] == "true"
-    assert len(config["secrets"]) == 4
+    # application, omniroute_ai, omniroute_search, omniroute_fetch (FASE E.1), searxng
+    assert len(config["secrets"]) == 5
 
 
 def test_image_context_and_durable_redis():
@@ -45,10 +49,17 @@ def test_image_context_and_durable_redis():
     assert "--require-hashes" in dockerfile
     assert "r['status']=='ok'" in dockerfile
     assert "COPY . " not in dockerfile
-    rules = [line for line in (ROOT / ".dockerignore").read_text().splitlines()
-             if line.strip() and not line.startswith("#")]
+    rules = [
+        line
+        for line in (ROOT / ".dockerignore").read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
     assert rules[0] == "**"
     redis = (ROOT / "deploy/redis/redis.conf").read_text()
-    for setting in ("appendonly yes", "appendfsync always", "maxmemory-policy noeviction",
-                    "no-appendfsync-on-rewrite no"):
+    for setting in (
+        "appendonly yes",
+        "appendfsync always",
+        "maxmemory-policy noeviction",
+        "no-appendfsync-on-rewrite no",
+    ):
         assert setting in redis

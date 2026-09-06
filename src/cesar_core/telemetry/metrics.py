@@ -5,6 +5,7 @@ from threading import Lock
 
 from cesar_core.ai.contracts import AIResponse
 from cesar_core.applications.identity import ApplicationId
+from cesar_core.fetch.contracts import FetchResponse
 from cesar_core.search.contracts import SearchResponse
 
 
@@ -17,7 +18,9 @@ class MetricsRegistry:
     """Registro em memória para o processo único, exportado em Prometheus text."""
 
     def __init__(self) -> None:
-        self._values: dict[tuple[str, tuple[tuple[str, str], ...]], float] = defaultdict(float)
+        self._values: dict[tuple[str, tuple[tuple[str, str], ...]], float] = (
+            defaultdict(float)
+        )
         self._lock = Lock()
 
     def increment(self, name: str, value: float = 1, **labels: str) -> None:
@@ -42,9 +45,7 @@ class MetricsRegistry:
             "status": str(status),
         }
         self.increment("cesar_core_http_requests_total", **labels)
-        self.increment(
-            "cesar_core_http_request_duration_ms_sum", duration_ms, **labels
-        )
+        self.increment("cesar_core_http_request_duration_ms_sum", duration_ms, **labels)
 
     def observe_ai(self, application_id: ApplicationId, response: AIResponse) -> None:
         labels = {"application": application_id.value}
@@ -84,6 +85,21 @@ class MetricsRegistry:
             self.increment("cesar_core_search_cache_hits_total", **labels)
         if response.fallback_used:
             self.increment("cesar_core_search_fallbacks_total", **labels)
+
+    def observe_fetch(
+        self, application_id: ApplicationId, response: FetchResponse
+    ) -> None:
+        labels = {"application": application_id.value}
+        self.increment("cesar_core_fetch_requests_total", **labels)
+        self.increment(
+            "cesar_core_fetch_cost_usd_total",
+            response.usage.fetch_cost_usd,
+            **labels,
+        )
+        if response.fetched:
+            self.increment("cesar_core_fetch_content_found_total", **labels)
+        if response.truncated:
+            self.increment("cesar_core_fetch_truncated_total", **labels)
 
     def render(self) -> str:
         with self._lock:

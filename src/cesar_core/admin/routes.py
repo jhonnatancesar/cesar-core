@@ -115,6 +115,9 @@ async def overview(request: Request) -> dict:
         "search_requests_24h": sum(
             item["requests"] for item in usage if item["capability"] == "search"
         ),
+        "fetch_requests_24h": sum(
+            item["requests"] for item in usage if item["capability"] == "fetch"
+        ),
         "errors_24h": sum(
             item["requests"] for item in usage if item["status_class"] == "error"
         ),
@@ -334,6 +337,8 @@ def routes(request: Request) -> list[dict]:
                 if path.startswith("/v1/ai")
                 else "search"
                 if path == "/v1/search"
+                else "fetch"
+                if path == "/v1/fetch"
                 else None
             )
             availability = (

@@ -56,6 +56,10 @@ vira uma única mensagem `user`; a lista tipada preserva ordem e roles
 inválido, ambos os campos ou nenhum retornam 400 normalizado. Não há streaming,
 tools nem multimodal. `AIRequest` interno contém somente mensagens normalizadas
 e não herda o DTO HTTP. Conteúdo das mensagens não é registrado em telemetria.
+`require_search_grounding=true` declara uma capability neutra: o Core solicita
+Web Search ao OmniRoute, exige evidência estruturada e devolve
+`grounding_requested`, `grounding_performed` e `grounding_sources`. Ausência de
+busca ou evidência falha fechada; o cliente não escolhe provider.
 
 Os DTOs públicos neutros de AI e Search fazem parte do OpenAPI. O
 `OmniRouteClient` é uma dependência de transporte e não expõe diretamente
