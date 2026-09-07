@@ -2,7 +2,7 @@
 
 Gateway central privado de AI e Web Search, com identidade de aplicação,
 policies de execução, quotas persistentes e observabilidade. Distribuição
-**1.1.0**, com todos os direitos reservados. A sequência TASK-118 está concluída;
+**1.2.0**, com todos os direitos reservados. A sequência TASK-118 está concluída;
 publicar esta release não implanta nem modifica o GG Oferta em PROD.
 
 ## Arquitetura
@@ -115,7 +115,7 @@ curl http://127.0.0.1:8100/health
 curl http://127.0.0.1:8100/ready
 ```
 
-O Compose usa `ghcr.io/jhonnatancesar/cesar-core:1.1.0`, não `build:`.
+O Compose usa `ghcr.io/jhonnatancesar/cesar-core:1.2.0`, não `build:`.
 Para deploy reproduzível, defina `CESAR_CORE_IMAGE` com o digest publicado pelo
 workflow: `ghcr.io/jhonnatancesar/cesar-core@sha256:<digest>`.
 A rede backend é interna; OmniRoute/SearXNG usam a rede egress para providers.
@@ -156,7 +156,7 @@ explicitamente a configuração operacional abaixo; não lê secrets do build.
 
 | Variável | Papel |
 |---|---|
-| `CESAR_CORE_IMAGE` | Tag ou digest da imagem; padrão GHCR 1.0.0 |
+| `CESAR_CORE_IMAGE` | Tag ou digest da imagem; padrão GHCR 1.2.0 |
 | `CESAR_CORE_PUBLISHED_PORT` | Porta host loopback, padrão 8100 |
 | `CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE` | Bearer aplicação → Core |
 | `CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE` | Arquivo de credencial AI upstream |
