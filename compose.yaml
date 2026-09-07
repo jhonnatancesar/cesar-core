@@ -1,7 +1,7 @@
 name: cesar-core
 services:
   cesar-core:
-    image: ${CESAR_CORE_IMAGE:-ghcr.io/jhonnatancesar/cesar-core:1.2.0}
+    image: ${CESAR_CORE_IMAGE:-ghcr.io/jhonnatancesar/cesar-core:1.2.1}
     platform: linux/amd64
     restart: unless-stopped
     init: true

@@ -2,7 +2,7 @@
 
 Gateway central privado de AI e Web Search, com identidade de aplicação,
 policies de execução, quotas persistentes e observabilidade. Distribuição
-**1.2.0**, com todos os direitos reservados. A sequência TASK-118 está concluída;
+**1.2.1**, com todos os direitos reservados. A sequência TASK-118 está concluída;
 publicar esta release não implanta nem modifica o GG Oferta em PROD.
 
 ## Arquitetura
@@ -115,7 +115,7 @@ curl http://127.0.0.1:8100/health
 curl http://127.0.0.1:8100/ready
 ```
 
-O Compose usa `ghcr.io/jhonnatancesar/cesar-core:1.2.0`, não `build:`.
+O Compose usa `ghcr.io/jhonnatancesar/cesar-core:1.2.1`, não `build:`.
 Para deploy reproduzível, defina `CESAR_CORE_IMAGE` com o digest publicado pelo
 workflow: `ghcr.io/jhonnatancesar/cesar-core@sha256:<digest>`.
 A rede backend é interna; OmniRoute/SearXNG usam a rede egress para providers.
@@ -156,7 +156,7 @@ explicitamente a configuração operacional abaixo; não lê secrets do build.
 
 | Variável | Papel |
 |---|---|
-| `CESAR_CORE_IMAGE` | Tag ou digest da imagem; padrão GHCR 1.2.0 |
+| `CESAR_CORE_IMAGE` | Tag ou digest da imagem; padrão GHCR 1.2.1 |
 | `CESAR_CORE_PUBLISHED_PORT` | Porta host loopback, padrão 8100 |
 | `CESAR_CORE_SECURITY_GG_OFERTA_API_KEY_FILE` | Bearer aplicação → Core |
 | `CESAR_CORE_OMNIROUTE_AI_API_KEY_FILE` | Arquivo de credencial AI upstream |
@@ -311,6 +311,14 @@ GHCR publica `1.0.0`, `1.0`, `1`, `latest` e `sha-<commit completo>`.
 Tags de imagem são convenientes; **digest é a referência imutável**.
 O package deve permanecer privado. Se uma tag falhar, não movê-la: decidir
 release corretiva em novo commit/versão. A edição pública é uma tarefa futura.
+
+**`v1.2.0` falhou na verificação** (2026-09-07): o build/push funcionou, mas
+`src/cesar_core/__init__.py` ainda declarava `__version__ = "1.1.0"` (só
+`pyproject.toml` tinha sido atualizado) -- a checagem final do workflow
+(`cesar_core.__version__ == EXPECTED_VERSION`) falhou. A tag `v1.2.0` não foi
+movida nem recriada; a correção (sincronizar as duas strings de versão) foi
+publicada como `v1.2.1`. **Não usar `v1.2.0`** -- as tags flutuantes
+(`1.2`, `1`, `latest`) já apontam para `1.2.1`.
 
 ## Projetos e serviços utilizados
 

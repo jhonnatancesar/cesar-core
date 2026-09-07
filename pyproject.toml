@@ -1,6 +1,6 @@
 [project]
 name = "cesar-core"
-version = "1.2.0"
+version = "1.2.1"
 description = "César Core -- infraestrutura central multi-aplicação de IA, Web Search e políticas de uso."
 license = "LicenseRef-Proprietary"
 license-files = ["LICENSE"]
