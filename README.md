@@ -78,7 +78,15 @@ Instalação e funcionalidade da integração vistas do lado de um consumidor
 real (GG Oferta): `docs/installation/cesar-core.md` e
 `docs/architecture/cesar-core-integration.md` no repositório
 [jhonnatancesar/AIShoppingAgent](https://github.com/jhonnatancesar/AIShoppingAgent)
-(privado, separado deste).
+(privado, separado deste). Para subir GG Oferta + este Core/OmniRoute +
+o Coupon Worker juntos, do zero, na ordem certa:
+`docs/installation/integrated-setup.md` no mesmo repositório. Para
+executar o deploy em PROD dos três componentes juntos (repositórios,
+migrations, provisionamento OmniRoute, ordem, gate Gemini):
+`docs/operations/prod-deployment-handoff.md`, também no repositório
+`AIShoppingAgent`. Arquitetura canônica desta integração (topologia,
+policy de providers AI, validação real): `docs/architecture/gg-oferta-core.md`
+neste repositório.
 O procedimento completo para colocar os dois projetos em funcionamento em DEV,
 incluindo configuração dos dois lados e smoke tests, está em
 [Arquitetura canônica GG Oferta ↔ César Core](docs/architecture/gg-oferta-core.md)
@@ -155,7 +163,9 @@ explicitamente a configuração operacional abaixo; não lê secrets do build.
 | `CESAR_CORE_OMNIROUTE_SEARCH_API_KEY_FILE` | Arquivo distinto de credencial Search upstream |
 | `CESAR_CORE_SEARXNG_SECRET_FILE` | Segredo interno do servidor SearXNG |
 | `CESAR_CORE_AI_ENABLED` / `SEARCH_ENABLED` | Opt-in; padrões false |
-| `CESAR_CORE_AI_DEFAULT_MODEL` | Target AI fixo configurado no OmniRoute |
+| `CESAR_CORE_AI_DEFAULT_MODEL` | Target AI fixo configurado no OmniRoute (aplica-se a todo `ai_profile` sem override abaixo) |
+| `CESAR_CORE_AI_USER_MODEL` | Nome do combo OmniRoute para `ai_profile=user` (ex.: `user-cascade`); sobrepõe `_DEFAULT_MODEL` só para esse perfil |
+| `CESAR_CORE_AI_ADMIN_DEV_MODEL` | Nome do combo OmniRoute para `ai_profile=admin_dev` (ex.: `admin-dev-cascade`); sobrepõe `_DEFAULT_MODEL` só para esse perfil |
 | `CESAR_CORE_AI_MODEL_ENFORCES_MAX_TOKENS` | Somente true após certificação real |
 | `CESAR_CORE_AI_MAX_TOKENS_LIMIT` | Cap da policy, padrão 4096 |
 | `CESAR_CORE_SEARCH_MAX_RESULTS_LIMIT` | Cap de saída, padrão 20 |
@@ -168,7 +178,10 @@ No nativo também existem `OMNIROUTE_BASE_URL`, `SECURITY_QUOTA_REDIS_URL`,
 `SEARCH_DEFAULT_PROVIDER`, `SEARCH_PROVIDER_HEALTH_URL` e overrides por classe,
 todos com prefixo `CESAR_CORE_`. No Compose, os endereços internos e o target
 SearXNG são definidos pela topologia oficial. Não marque target pago como FREE.
-AI e Search não recebem modelo/provider escolhido pelo body público.
+AI e Search não recebem modelo/provider escolhido pelo body público -- o único
+campo de identidade que o consumidor declara é `ai_profile` (`user` ou
+`admin_dev`), usado pela policy para resolver o combo correto (ver
+`docs/architecture/gg-oferta-core.md`, seção "Política de providers AI").
 
 ## Secrets e segurança
 
@@ -210,7 +223,12 @@ OmniRoute **3.8.50 oficial**, fixado no digest certificado
 `sha256:085c57adf499a8aaa9f35ccde95c0df9c11bd9ecd18d6c9edbf3b68b8079ba9d`.
 Configuração e credenciais dos providers ficam no volume/runtime do OmniRoute.
 AI usa o target configurado; Search usa uma conexão `searxng-search` com
-`providerSpecificData.baseUrl=http://searxng:8080/search`.
+`providerSpecificData.baseUrl=http://searxng:8080/search`. As 4 connections
+reais de AI (Gemini USER, Gemini ADMIN/DEV, Groq ADMIN/DEV, OpenRouter
+ADMIN/DEV) e os 2 combos (`user-cascade`, `admin-dev-cascade`) não fazem
+parte deste Compose -- são provisionados uma vez por ambiente, com
+procedimento determinístico e reproduzível em
+`docs/operations/omniroute-ai-provider-provisioning.md`.
 
 SearXNG tem JSON habilitado e acesso apenas interno. Motores externos podem
 retornar CAPTCHA, rate limit ou ficar indisponíveis. `max_results` é garantido
