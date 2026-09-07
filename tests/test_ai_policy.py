@@ -11,6 +11,7 @@ from cesar_core.ai.errors import (
 from cesar_core.ai.policy import WILDCARD_PURPOSE, AIModelTarget, AIPolicy
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.cost_policy import CostPolicy
 from cesar_core.policy.purpose import Purpose
 from cesar_core.policy.requirements import Requirements
@@ -23,6 +24,7 @@ def _request(
     purpose: str = "market_research",
     cost: CostPolicy = CostPolicy.FREE_ONLY,
     max_tokens: int | None = None,
+    ai_profile: AIProfile = AIProfile.ADMIN_DEV,
 ) -> AIRequest:
     return AIRequest(
         context=ApplicationContext(
@@ -32,6 +34,7 @@ def _request(
             request_id="req-1",
             correlation_id="corr-1",
         ),
+        ai_profile=ai_profile,
         requirements=Requirements(
             service_class=ServiceClass.ECONOMY,
             cost_policy=cost,
@@ -49,8 +52,14 @@ def test_policy_prefers_exact_purpose_over_wildcard() -> None:
                 ApplicationId.GG_OFERTA,
                 WILDCARD_PURPOSE,
                 ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
             ): AIModelTarget("fallback-model"),
-            (ApplicationId.GG_OFERTA, "market_research", ServiceClass.ECONOMY): exact,
+            (
+                ApplicationId.GG_OFERTA,
+                "market_research",
+                ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
+            ): exact,
         }
     )
     assert policy.resolve(_request()) is exact
@@ -59,7 +68,14 @@ def test_policy_prefers_exact_purpose_over_wildcard() -> None:
 def test_policy_uses_wildcard_purpose() -> None:
     target = AIModelTarget("model-a")
     policy = AIPolicy(
-        {(ApplicationId.GG_OFERTA, WILDCARD_PURPOSE, ServiceClass.ECONOMY): target}
+        {
+            (
+                ApplicationId.GG_OFERTA,
+                WILDCARD_PURPOSE,
+                ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
+            ): target
+        }
     )
     assert policy.resolve(_request(purpose="another")) is target
 
@@ -81,6 +97,7 @@ def test_policy_rejects_paid_target_for_free_only() -> None:
                 ApplicationId.GG_OFERTA,
                 WILDCARD_PURPOSE,
                 ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
             ): AIModelTarget("paid-model", paid=True)
         }
     )
@@ -96,6 +113,7 @@ def test_policy_enforces_max_tokens_limit() -> None:
                 ApplicationId.GG_OFERTA,
                 WILDCARD_PURPOSE,
                 ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
             ): AIModelTarget("model-a", max_tokens_limit=100, enforces_max_tokens=True)
         }
     )
@@ -112,6 +130,7 @@ def test_policy_rejects_max_tokens_before_upstream_when_target_is_not_certified(
                 ApplicationId.GG_OFERTA,
                 WILDCARD_PURPOSE,
                 ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
             ): AIModelTarget("auto/best-free")
         }
     )

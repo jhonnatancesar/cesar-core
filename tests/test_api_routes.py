@@ -102,6 +102,7 @@ def test_ai_generate_builds_trusted_context_outside_the_body() -> None:
             "/v1/ai/generate",
             headers=_identity_headers(purpose="chat", correlation_id="corr-fixed"),
             json={
+                "ai_profile": "admin_dev",
                 "requirements": {
                     "service_class": "standard",
                     "cost_policy": "free_preferred",
@@ -129,6 +130,7 @@ def test_spoofed_application_header_does_not_change_authenticated_identity() -> 
             "/v1/ai/generate",
             headers=headers,
             json={
+                "ai_profile": "admin_dev",
                 "requirements": {
                     "service_class": "standard",
                     "cost_policy": "free_preferred",
@@ -148,6 +150,7 @@ def test_ai_generate_requires_a_bearer_credential() -> None:
         response = client.post(
             "/v1/ai/generate",
             json={
+                "ai_profile": "admin_dev",
                 "requirements": {
                     "service_class": "standard",
                     "cost_policy": "free_preferred",
@@ -171,6 +174,7 @@ def test_invalid_application_credential_is_rejected() -> None:
             "X-Purpose": "chat",
         },
         json={
+            "ai_profile": "admin_dev",
             "requirements": {
                 "service_class": "standard",
                 "cost_policy": "free_preferred",
@@ -188,6 +192,7 @@ def test_authentication_not_configured_is_fail_closed(monkeypatch) -> None:
         "/v1/ai/generate",
         headers=_identity_headers(purpose="chat"),
         json={
+            "ai_profile": "admin_dev",
             "requirements": {
                 "service_class": "standard",
                 "cost_policy": "free_preferred",
@@ -207,6 +212,7 @@ def test_ai_generate_returns_normalized_error_when_gateway_is_disabled(
         "/v1/ai/generate",
         headers=_identity_headers(purpose="chat", correlation_id="corr-disabled"),
         json={
+            "ai_profile": "admin_dev",
             "requirements": {
                 "service_class": "standard",
                 "cost_policy": "free_preferred",
@@ -344,6 +350,7 @@ def test_quota_is_enforced_before_the_ai_manager(monkeypatch) -> None:
     manager = StubAIManager()
     app.dependency_overrides[get_ai_manager] = lambda: manager
     payload = {
+        "ai_profile": "admin_dev",
         "requirements": {
             "service_class": "standard",
             "cost_policy": "free_preferred",
@@ -372,6 +379,7 @@ def test_metrics_aggregate_authenticated_usage_without_credentials() -> None:
             "/v1/ai/generate",
             headers=_identity_headers(purpose="chat"),
             json={
+                "ai_profile": "admin_dev",
                 "requirements": {
                     "service_class": "standard",
                     "cost_policy": "free_preferred",

@@ -39,6 +39,7 @@ from cesar_core.fetch.policy import PolicyKey as FetchPolicyKey
 from cesar_core.fetch.providers.omniroute import build_fetch_provider
 from cesar_core.omniroute.client import OmniRouteClient
 from cesar_core.omniroute.config import OmniRouteConfig
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.purpose import Purpose
 from cesar_core.policy.service_class import ServiceClass
 from cesar_core.search.config import TECHNICAL_DOCUMENTATION_PURPOSE, SearchConfig
@@ -169,23 +170,43 @@ async def get_ai_manager() -> AsyncIterator[AIManager]:
         return
 
     rules: dict[PolicyKey, AIModelTarget] = {}
+    active_ai_applications = [
+        application
+        for application in list_applications()
+        if application.state.value == "active"
+        and "ai" in application.allowed_capabilities
+    ]
     for service_class in ServiceClass:
         model = config.model_for(service_class)
         if model is not None:
-            for application in list_applications():
-                if (
-                    application.state.value != "active"
-                    or "ai" not in application.allowed_capabilities
-                ):
-                    continue
-                rules[(application.id, AI_WILDCARD_PURPOSE, service_class)] = (
-                    AIModelTarget(
+            for application in active_ai_applications:
+                for ai_profile in AIProfile:
+                    rules[
+                        (application.id, AI_WILDCARD_PURPOSE, service_class, ai_profile)
+                    ] = AIModelTarget(
                         model=model,
                         provider=config.provider or None,
                         paid=config.model_is_paid,
                         enforces_max_tokens=config.model_enforces_max_tokens,
                         max_tokens_limit=config.max_tokens_limit,
                     )
+
+    # Perfil-específico (USER vs ADMIN/DEV): sobrepõe a legada acima quando
+    # configurado -- cada perfil aponta para o combo OmniRoute dedicado a
+    # ele, que já resolve a cascata inteira internamente (ver ADR-0014).
+    for ai_profile in AIProfile:
+        profile_model = config.model_for_profile(ai_profile)
+        if profile_model is None:
+            continue
+        for application in active_ai_applications:
+            for service_class in ServiceClass:
+                rules[
+                    (application.id, AI_WILDCARD_PURPOSE, service_class, ai_profile)
+                ] = AIModelTarget(
+                    model=profile_model,
+                    paid=(ai_profile is AIProfile.ADMIN_DEV),
+                    enforces_max_tokens=config.model_enforces_max_tokens,
+                    max_tokens_limit=config.max_tokens_limit,
                 )
 
     try:

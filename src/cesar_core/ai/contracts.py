@@ -12,6 +12,14 @@ Core a constrói combinando o ``ApplicationContext`` confiável (resolvido
 por autenticação em ``api/deps.py``)
 com um ``AIRequestPayload`` já validado. ``POST /v1/ai/generate`` executa esse
 fluxo sem aceitar identidade no body.
+
+``ai_profile`` é a única exceção deliberada à regra "nada de identidade
+no body": o Core autentica a aplicação inteira (ex.: GG Oferta), não o
+usuário final por trás de uma chamada específica, então só a aplicação
+chamadora sabe se aquela chamada é de um usuário final ou de um fluxo
+ADMIN/DEV. Não é ``Requirements`` (não é qualidade/custo) nem
+``ApplicationContext`` (não é resolvido por autenticação) -- ver
+``policy/ai_profile.py``.
 """
 
 from enum import StrEnum
@@ -19,6 +27,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cesar_core.applications.context import ApplicationContext
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.requirements import Requirements
 
 
@@ -50,6 +59,7 @@ class AIRequestPayload(BaseModel):
         }
     )
 
+    ai_profile: AIProfile
     requirements: Requirements
     prompt: str | None = Field(default=None, min_length=1)
     messages: list[AIMessage] | None = Field(default=None, min_length=1)
@@ -94,6 +104,7 @@ class AIRequestPayload(BaseModel):
             messages = [AIMessage(role=AIMessageRole.USER, content=self.prompt)]
         return AIRequest(
             context=context,
+            ai_profile=self.ai_profile,
             requirements=self.requirements,
             messages=tuple(messages),
             max_tokens=self.max_tokens,
@@ -110,6 +121,7 @@ class AIRequest(BaseModel):
     """
 
     context: ApplicationContext
+    ai_profile: AIProfile
     requirements: Requirements
     messages: tuple[AIMessage, ...] = Field(min_length=1)
     max_tokens: int | None = Field(default=None, ge=1)

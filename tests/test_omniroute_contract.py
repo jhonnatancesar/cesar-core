@@ -62,6 +62,7 @@ from cesar_core.applications.identity import ApplicationId
 from cesar_core.omniroute.client import OmniRouteClient
 from cesar_core.omniroute.config import OmniRouteConfig
 from cesar_core.omniroute.errors import OmniRouteAuthError, OmniRouteClientError
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.cost_policy import CostPolicy
 from cesar_core.policy.purpose import Purpose
 from cesar_core.policy.requirements import Requirements
@@ -350,6 +351,7 @@ async def test_ai_adapter_normalizes_real_omniroute_client_error() -> None:
             request_id="contract-ai-request",
             correlation_id="contract-ai-correlation",
         ),
+        ai_profile=AIProfile.ADMIN_DEV,
         requirements=Requirements(
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
@@ -380,6 +382,7 @@ async def test_ai_generate_endpoint_normalizes_real_omniroute_completion(
                 ApplicationId.GG_OFERTA,
                 "contract_ai_validation",
                 ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
             ): target
         }
     )
@@ -403,6 +406,7 @@ async def test_ai_generate_endpoint_normalizes_real_omniroute_completion(
                 "X-Correlation-Id": "contract-ai-success-correlation",
             },
             json={
+                "ai_profile": "admin_dev",
                 "requirements": {
                     "service_class": "economy",
                     "cost_policy": "free_only",
@@ -419,6 +423,7 @@ async def test_ai_generate_endpoint_normalizes_real_omniroute_completion(
                 "X-Correlation-Id": "contract-ai-limit-correlation",
             },
             json={
+                "ai_profile": "admin_dev",
                 "requirements": {
                     "service_class": "economy",
                     "cost_policy": "free_only",
@@ -475,6 +480,7 @@ async def _assert_real_cap_and_response_validation(cap: int) -> None:
             request_id="contract-ai-max-tokens-request",
             correlation_id="contract-ai-max-tokens-correlation",
         ),
+        ai_profile=AIProfile.ADMIN_DEV,
         requirements=Requirements(
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
@@ -559,7 +565,14 @@ async def test_ai_real_text_completion_with_comfortable_cap(
         max_tokens_limit=512,
     )
     policy = AIPolicy(
-        {(ApplicationId.GG_OFERTA, "max_tokens_text", ServiceClass.ECONOMY): target}
+        {
+            (
+                ApplicationId.GG_OFERTA,
+                "max_tokens_text",
+                ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
+            ): target
+        }
     )
 
     async def real_manager():
@@ -581,6 +594,7 @@ async def test_ai_real_text_completion_with_comfortable_cap(
                 "X-Correlation-Id": "contract-ai-text-correlation",
             },
             json={
+                "ai_profile": "admin_dev",
                 "requirements": {
                     "service_class": "economy",
                     "cost_policy": "free_only",
@@ -659,6 +673,7 @@ async def test_ai_adapter_normalizes_real_authentication_error() -> None:
                 request_id="contract-ai-auth-request",
                 correlation_id="contract-ai-auth-correlation",
             ),
+            ai_profile=AIProfile.ADMIN_DEV,
             requirements=Requirements(
                 service_class=ServiceClass.ECONOMY,
                 cost_policy=CostPolicy.FREE_ONLY,
@@ -692,6 +707,7 @@ async def test_real_typed_messages_preserve_roles_and_order(
                 ApplicationId.GG_OFERTA,
                 "typed_roles_validation",
                 ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
             ): AIModelTarget(
                 REAL_MAX_TOKENS_MODEL, enforces_max_tokens=True, max_tokens_limit=512
             )
@@ -720,6 +736,7 @@ async def test_real_typed_messages_preserve_roles_and_order(
                 "X-Correlation-Id": "118f-typed-roles",
             },
             json={
+                "ai_profile": "admin_dev",
                 "requirements": {
                     "service_class": "economy",
                     "cost_policy": "free_only",
@@ -792,6 +809,7 @@ async def test_ai_adapter_normalizes_real_timeout() -> None:
             request_id="contract-ai-timeout-request",
             correlation_id="contract-ai-timeout-correlation",
         ),
+        ai_profile=AIProfile.ADMIN_DEV,
         requirements=Requirements(
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
@@ -828,6 +846,7 @@ async def test_ai_adapter_normalizes_real_connection_refusal() -> None:
             request_id="contract-ai-unavailable-request",
             correlation_id="contract-ai-unavailable-correlation",
         ),
+        ai_profile=AIProfile.ADMIN_DEV,
         requirements=Requirements(
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,

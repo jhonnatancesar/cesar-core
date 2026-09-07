@@ -29,3 +29,11 @@ class OmniRouteResponse(BaseModel):
     status_code: int
     body: dict[str, Any]
     upstream_request_id: str | None = None
+    selected_provider: str | None = None
+    """``X-OmniRoute-Provider``: alias real do provider/connection que
+    efetivamente atendeu a chamada (``getProviderAlias()`` no OmniRoute),
+    inclusive quando o request usou um combo -- não é o mesmo dado que o
+    ``model`` pedido pelo Core. Emitido pelo OmniRoute em todo retorno de
+    sucesso não-streaming (``domain/omnirouteResponseMeta.ts``,
+    ``attachOmniRouteMetaHeaders``); ``None`` quando o OmniRoute não o
+    emitiu (nunca inferido a partir do nome do modelo)."""

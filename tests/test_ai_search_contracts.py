@@ -1,6 +1,7 @@
 from cesar_core.ai.contracts import AIRequestPayload, AIResponse
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.cost_policy import CostPolicy
 from cesar_core.policy.purpose import Purpose
 from cesar_core.policy.requirements import Requirements
@@ -47,7 +48,9 @@ def test_search_request_payload_normalizes_query_whitespace() -> None:
 
 def test_ai_request_extends_payload_with_trusted_context() -> None:
     payload = AIRequestPayload(
-        requirements=_requirements(), prompt="qual o menor preço?"
+        ai_profile=AIProfile.ADMIN_DEV,
+        requirements=_requirements(),
+        prompt="qual o menor preço?",
     )
     request = payload.to_domain(_context())
     response = AIResponse(

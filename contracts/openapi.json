@@ -516,6 +516,15 @@
         ],
         "title": "AIMessageRole"
       },
+      "AIProfile": {
+        "type": "string",
+        "enum": [
+          "user",
+          "admin_dev"
+        ],
+        "title": "AIProfile",
+        "description": "Perfil que a aplicação chamadora declara para uma chamada de AI.\n\nDiferente de ``ApplicationContext`` (sempre resolvido pelo Core a\npartir da credencial autenticada, nunca do corpo -- ver ADR 0002),\neste campo precisa vir do cliente: o Core autentica a aplicação\ninteira (ex.: GG Oferta), não o usuário final por trás de uma\nchamada específica, então só a aplicação sabe se aquela chamada é\nde um usuário final ou de um fluxo ADMIN/DEV. Não é sinal de\nqualidade/custo (por isso não faz parte de ``Requirements``): a\npolicy usa este campo para restringir quais rotas/providers de AI\ncada perfil pode alcançar (ex.: USER nunca alcança Groq/OpenRouter)."
+      },
       "AIRequestPayload": {
         "oneOf": [
           {
@@ -530,6 +539,9 @@
           }
         ],
         "properties": {
+          "ai_profile": {
+            "$ref": "#/components/schemas/AIProfile"
+          },
           "requirements": {
             "$ref": "#/components/schemas/Requirements"
           },
@@ -582,6 +594,7 @@
         },
         "type": "object",
         "required": [
+          "ai_profile",
           "requirements"
         ],
         "title": "AIRequestPayload",

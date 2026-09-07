@@ -15,6 +15,7 @@ from cesar_core.applications.identity import ApplicationId
 from cesar_core.applications.registry import REGISTRY
 from cesar_core.omniroute.client import OmniRouteClient
 from cesar_core.omniroute.config import OmniRouteConfig
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.service_class import ServiceClass
 
 
@@ -47,6 +48,7 @@ def typed_client(monkeypatch, tmp_path):
                 ApplicationId.GG_OFERTA,
                 "messages_test",
                 ServiceClass.ECONOMY,
+                AIProfile.ADMIN_DEV,
             ): AIModelTarget(
                 "fixture-model", enforces_max_tokens=True, max_tokens_limit=8
             )
@@ -77,6 +79,7 @@ def send(client, **payload):
     return client.post(
         "/v1/ai/generate",
         json={
+            "ai_profile": "admin_dev",
             "requirements": {"service_class": "economy", "cost_policy": "free_only"},
             "max_tokens": 8,
             **payload,
@@ -113,15 +116,20 @@ def test_legacy_prompt_normalizes_without_changing_text(typed_client):
 
 def test_grounding_flag_is_provider_agnostic_and_defaults_off():
     payload = AIRequestPayload(
+        ai_profile=AIProfile.ADMIN_DEV,
         requirements={"service_class": "economy", "cost_policy": "free_only"},
         messages=[{"role": "user", "content": "question"}],
         require_search_grounding=True,
     )
     assert payload.require_search_grounding is True
-    assert AIRequestPayload(
-        requirements={"service_class": "economy", "cost_policy": "free_only"},
-        prompt="question",
-    ).require_search_grounding is False
+    assert (
+        AIRequestPayload(
+            ai_profile=AIProfile.ADMIN_DEV,
+            requirements={"service_class": "economy", "cost_policy": "free_only"},
+            prompt="question",
+        ).require_search_grounding
+        is False
+    )
 
 
 @pytest.mark.parametrize(

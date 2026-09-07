@@ -13,11 +13,12 @@ from cesar_core.ai.errors import (
 )
 from cesar_core.applications.identity import ApplicationId
 from cesar_core.applications.registry import is_active
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.cost_policy import CostPolicy
 from cesar_core.policy.service_class import ServiceClass
 
 WILDCARD_PURPOSE = "*"
-PolicyKey = tuple[ApplicationId, str, ServiceClass]
+PolicyKey = tuple[ApplicationId, str, ServiceClass, AIProfile]
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,11 +54,13 @@ class AIPolicy:
             request.context.application_id,
             request.context.purpose.value,
             request.requirements.service_class,
+            request.ai_profile,
         )
         wildcard_key = (
             request.context.application_id,
             WILDCARD_PURPOSE,
             request.requirements.service_class,
+            request.ai_profile,
         )
         target = self._rules.get(exact_key) or self._rules.get(wildcard_key)
         if target is None:

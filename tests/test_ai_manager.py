@@ -6,6 +6,7 @@ from cesar_core.ai.manager import AIManager
 from cesar_core.ai.policy import WILDCARD_PURPOSE, AIModelTarget, AIPolicy
 from cesar_core.applications.context import ApplicationContext
 from cesar_core.applications.identity import ApplicationId
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.cost_policy import CostPolicy
 from cesar_core.policy.purpose import Purpose
 from cesar_core.policy.requirements import Requirements
@@ -35,6 +36,7 @@ def _request() -> AIRequest:
             request_id="req-1",
             correlation_id="corr-1",
         ),
+        ai_profile=AIProfile.ADMIN_DEV,
         requirements=Requirements(
             service_class=ServiceClass.STANDARD,
             cost_policy=CostPolicy.FREE_PREFERRED,
@@ -50,6 +52,7 @@ def _policy() -> AIPolicy:
                 ApplicationId.GG_OFERTA,
                 WILDCARD_PURPOSE,
                 ServiceClass.STANDARD,
+                AIProfile.ADMIN_DEV,
             ): AIModelTarget("model-a")
         }
     )

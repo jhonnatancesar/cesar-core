@@ -21,6 +21,7 @@ from cesar_core.omniroute.errors import (
     OmniRouteTimeoutError,
 )
 from cesar_core.omniroute.models import OmniRouteResponse
+from cesar_core.policy.ai_profile import AIProfile
 from cesar_core.policy.cost_policy import CostPolicy
 from cesar_core.policy.purpose import Purpose
 from cesar_core.policy.requirements import Requirements
@@ -28,8 +29,9 @@ from cesar_core.policy.service_class import ServiceClass
 
 
 class StubClient:
-    def __init__(self, body: dict) -> None:
+    def __init__(self, body: dict, *, selected_provider: str | None = None) -> None:
         self.body = body
+        self.selected_provider = selected_provider
         self.payload: dict | None = None
         self.correlation_id: str | None = None
 
@@ -42,6 +44,7 @@ class StubClient:
             status_code=200,
             body=self.body,
             upstream_request_id="upstream-1",
+            selected_provider=self.selected_provider,
         )
 
 
@@ -80,6 +83,7 @@ def _request() -> AIRequest:
             request_id="req-1",
             correlation_id="corr-1",
         ),
+        ai_profile=AIProfile.ADMIN_DEV,
         requirements=Requirements(
             service_class=ServiceClass.ECONOMY,
             cost_policy=CostPolicy.FREE_ONLY,
@@ -118,6 +122,42 @@ async def test_omniroute_ai_provider_translates_request_and_response() -> None:
     assert response.usage is not None and response.usage.total_tokens == 5
     assert response.fallback_used is True
     assert response.upstream_request_id == "upstream-1"
+
+
+async def test_selected_provider_header_wins_over_body_and_target() -> None:
+    """`X-OmniRoute-Provider` identifica o provider real (inclusive por
+    combo); nunca inferir a partir do nome do modelo (ver ADR/relatório
+    da policy de providers AI)."""
+    client = StubClient(
+        {
+            "model": "resolved-model",
+            "provider": "body-says-this-provider",
+            "choices": [{"message": {"content": "normalized"}}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        },
+        selected_provider="gemini",
+    )
+    provider = OmniRouteAIProvider(client)  # type: ignore[arg-type]
+    response = await provider.complete(
+        _request(), target=AIModelTarget("user-cascade", provider="target-says-this")
+    )
+    assert response.provider == "gemini"
+
+
+async def test_selected_provider_header_absent_falls_back_to_body_then_target() -> None:
+    client = StubClient(
+        {
+            "model": "resolved-model",
+            "choices": [{"message": {"content": "normalized"}}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        },
+        selected_provider=None,
+    )
+    provider = OmniRouteAIProvider(client)  # type: ignore[arg-type]
+    response = await provider.complete(
+        _request(), target=AIModelTarget("model-a", provider="target-says-this")
+    )
+    assert response.provider == "target-says-this"
 
 
 async def test_grounding_executes_web_tool_and_preserves_typed_messages() -> None:

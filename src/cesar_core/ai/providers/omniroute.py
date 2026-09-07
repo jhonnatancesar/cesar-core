@@ -131,7 +131,11 @@ class OmniRouteAIProvider:
             correlation_id=request.context.correlation_id,
             content=content,
             provider_gateway="omniroute",
-            provider=_optional_string(body.get("provider")) or target.provider,
+            provider=(
+                _optional_string(upstream.selected_provider)
+                or _optional_string(body.get("provider"))
+                or target.provider
+            ),
             model=_optional_string(body.get("model")) or target.model,
             usage=usage,
             latency_ms=0,

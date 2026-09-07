@@ -35,6 +35,7 @@ from cesar_core.omniroute.errors import (
 from cesar_core.omniroute.models import OmniRouteHealth, OmniRouteResponse
 
 REQUEST_ID_HEADER = "x-request-id"
+SELECTED_PROVIDER_HEADER = "X-OmniRoute-Provider"
 
 CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
 SEARCH_PATH = "/v1/search"
@@ -320,6 +321,7 @@ class OmniRouteClient:
             status_code=response.status_code,
             body=response.json(),
             upstream_request_id=response.headers.get(REQUEST_ID_HEADER),
+            selected_provider=response.headers.get(SELECTED_PROVIDER_HEADER),
         )
 
     @staticmethod
